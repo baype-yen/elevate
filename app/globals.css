@@ -1,0 +1,115 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --background: #FAF9F7;
+  --foreground: #1A1A1A;
+  --card: #FFFFFF;
+  --card-foreground: #1A1A1A;
+  --popover: #FFFFFF;
+  --popover-foreground: #1A1A1A;
+  --primary: #1B2A4A;
+  --primary-foreground: #FFFFFF;
+  --secondary: #F4A261;
+  --secondary-foreground: #1B2A4A;
+  --muted: #F0EEEB;
+  --muted-foreground: #5A5A5A;
+  --accent: #7B5EA7;
+  --accent-foreground: #FFFFFF;
+  --destructive: #E8505B;
+  --destructive-foreground: #FFFFFF;
+  --border: #D8D4CE;
+  --input: #D8D4CE;
+  --ring: #1B2A4A;
+  --chart-1: #7B5EA7;
+  --chart-2: #F4A261;
+  --chart-3: #1B2A4A;
+  --chart-4: #E8505B;
+  --chart-5: #A68DC9;
+  --radius: 0.75rem;
+
+  --navy: #1B2A4A;
+  --navy-mid: #2C4270;
+  --navy-light: #3D5A96;
+  --abricot: #F4A261;
+  --abricot-light: #F9D4AE;
+  --abricot-dark: #D4823E;
+  --watermelon: #E8505B;
+  --watermelon-light: #F2A0A5;
+  --watermelon-dark: #C43640;
+  --violet: #7B5EA7;
+  --violet-light: #A68DC9;
+  --violet-pale: #D8CCE8;
+  --gray-light: #F0EEEB;
+  --gray-mid: #D8D4CE;
+  --gray-dark: #B0AAA0;
+  --off-white: #FAF9F7;
+  --text-dark: #1A1A1A;
+  --text-mid: #5A5A5A;
+  --text-light: #8A8A85;
+}
+
+@theme inline {
+  --font-sans: 'Roboto', sans-serif;
+  --font-serif: 'Roboto Slab', serif;
+  --font-mono: 'Geist Mono', 'Geist Mono Fallback';
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --color-navy: var(--navy);
+  --color-navy-mid: var(--navy-mid);
+  --color-navy-light: var(--navy-light);
+  --color-abricot: var(--abricot);
+  --color-abricot-light: var(--abricot-light);
+  --color-abricot-dark: var(--abricot-dark);
+  --color-watermelon: var(--watermelon);
+  --color-watermelon-light: var(--watermelon-light);
+  --color-watermelon-dark: var(--watermelon-dark);
+  --color-violet: var(--violet);
+  --color-violet-light: var(--violet-light);
+  --color-violet-pale: var(--violet-pale);
+  --color-gray-light: var(--gray-light);
+  --color-gray-mid: var(--gray-mid);
+  --color-gray-dark: var(--gray-dark);
+  --color-off-white: var(--off-white);
+  --color-text-dark: var(--text-dark);
+  --color-text-mid: var(--text-mid);
+  --color-text-light: var(--text-light);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
