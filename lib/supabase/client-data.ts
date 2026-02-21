@@ -498,10 +498,13 @@ export async function fetchTeacherStudentsData(
     }
   })
 
-  const merged = rosterList.length ? rosterList : enrolledList
+  const merged = [...enrolledList, ...rosterList]
   const unique = new Map<string, any>()
   for (const student of merged) {
-    unique.set(`${student.name}|${student.level}`, student)
+    const key = `${student.name}|${student.level}`
+    if (!unique.has(key)) {
+      unique.set(key, student)
+    }
   }
 
   return {

@@ -1,9 +1,8 @@
 "use client"
 
 import { useState } from "react"
-import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { ElevateLogo, ElevateButton, InputField } from "@/components/elevate/shared"
+import { ElevateButton, InputField } from "@/components/elevate/shared"
 import { Icons } from "@/components/elevate/icons"
 import { createClient } from "@/lib/supabase/client"
 
@@ -59,7 +58,7 @@ export default function LoginPage() {
               E
             </div>
             <h1 className="font-serif text-[22px] font-bold text-white mb-1">Welcome back</h1>
-            <p className="text-[13px] text-gray-mid">Sign in to continue learning</p>
+            <p className="text-[13px] text-gray-mid">Sign in with your school-provided account</p>
           </div>
         </div>
 
@@ -95,8 +94,7 @@ export default function LoginPage() {
           <ElevateButton variant="outline" fullWidth>Continue with School SSO</ElevateButton>
 
           <p className="text-center text-[13px] text-text-light">
-            No account?{" "}
-            <Link href="/signup" className="text-navy font-semibold hover:underline">Sign up free</Link>
+            Account access is provided by your teacher or school administrator.
           </p>
         </div>
       </div>

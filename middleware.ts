@@ -6,7 +6,7 @@ function isProtectedPath(pathname: string) {
 }
 
 function isAuthPath(pathname: string) {
-  return pathname === "/login" || pathname === "/signup"
+  return pathname === "/login"
 }
 
 export async function middleware(request: NextRequest) {
@@ -53,5 +53,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/teacher/:path*", "/student/:path*", "/login", "/signup"],
+  matcher: ["/teacher/:path*", "/student/:path*", "/login"],
 }

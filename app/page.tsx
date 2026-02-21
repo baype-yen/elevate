@@ -58,8 +58,8 @@ export default function HomePage() {
               <Link href="/login">
                 <ElevateButton variant="ghost" size="sm" className="text-white hover:bg-navy-mid border-transparent">Sign In</ElevateButton>
               </Link>
-              <Link href="/signup">
-                <ElevateButton variant="secondary" size="sm">Get Started</ElevateButton>
+              <Link href="/login">
+                <ElevateButton variant="secondary" size="sm">Student Access</ElevateButton>
               </Link>
             </div>
           </nav>
@@ -76,8 +76,8 @@ export default function HomePage() {
               From A1 to C2 — personalized lessons, adaptive exercises, and real-time progress tracking for students and teachers.
             </p>
             <div className="flex gap-3 flex-wrap">
-              <Link href="/signup">
-                <ElevateButton variant="secondary" size="lg" iconRight icon={<Icons.ArrowRight />}>Start Learning Free</ElevateButton>
+              <Link href="/login">
+                <ElevateButton variant="secondary" size="lg" iconRight icon={<Icons.ArrowRight />}>Access Your Account</ElevateButton>
               </Link>
               <Link href="/teacher">
                 <ElevateButton variant="outline" size="lg" className="border-white/30 text-white hover:bg-navy-mid">Teacher Dashboard</ElevateButton>
@@ -140,8 +140,8 @@ export default function HomePage() {
           Join thousands of students and teachers already using Elevate to master language learning.
         </p>
         <div className="flex gap-3 justify-center flex-wrap">
-          <Link href="/signup">
-            <ElevateButton variant="primary" size="lg" iconRight icon={<Icons.ArrowRight />}>Create Free Account</ElevateButton>
+          <Link href="/login">
+            <ElevateButton variant="primary" size="lg" iconRight icon={<Icons.ArrowRight />}>Go to Sign In</ElevateButton>
           </Link>
           <Link href="/student">
             <ElevateButton variant="outline" size="lg">Explore Student View</ElevateButton>
