@@ -1,18 +1,12 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Icons } from "@/components/elevate/icons"
 import { LevelBadge, ElevateButton, BadgeChooser } from "@/components/elevate/shared"
 import { cn } from "@/lib/utils"
-
-const work = [
-  { title: "Essay: My Ideal Future", student: "Emma Martin", submitted: "Feb 20", status: "Pending", score: null, type: "Writing", level: "B1" },
-  { title: "Grammar Quiz — Conditionals", student: "Lucas Chevalier", submitted: "Feb 19", status: "Graded", score: 85, type: "Grammar", level: "B1" },
-  { title: "Listening Comprehension #8", student: "Hugo Bernard", submitted: "Feb 19", status: "Graded", score: 62, type: "Listening", level: "A2" },
-  { title: "Oral Presentation Recording", student: "Chloe Petit", submitted: "Feb 18", status: "Pending", score: null, type: "Speaking", level: "B1" },
-  { title: "Reading Analysis — Animal Farm", student: "Lea Moreau", submitted: "Feb 18", status: "Graded", score: 96, type: "Reading", level: "B2" },
-  { title: "Vocabulary Test — Week 11", student: "Nathan Dubois", submitted: "Feb 17", status: "Graded", score: 41, type: "Vocabulary", level: "A2" },
-]
+import { createClient } from "@/lib/supabase/client"
+import { useAppContext } from "@/hooks/use-app-context"
+import { fetchTeacherWorkData } from "@/lib/supabase/client-data"
 
 function levelColorClass(level: string) {
   if (level === "B2") return "watermelon"
@@ -22,10 +16,34 @@ function levelColorClass(level: string) {
 
 export default function WorkPage() {
   const [filter, setFilter] = useState<string | string[]>("all")
+  const [selectedClass, setSelectedClass] = useState<string | string[]>("all")
+  const [work, setWork] = useState<any[]>([])
+  const [classes, setClasses] = useState<Array<{ id: string; name: string }>>([])
+  const { context, loading } = useAppContext()
 
-  const filteredWork = filter === "all" ? work : work.filter(w =>
-    filter === "pending" ? w.status === "Pending" : w.status === "Graded"
-  )
+  useEffect(() => {
+    if (!context) return
+    const supabase = createClient()
+    fetchTeacherWorkData(
+      supabase,
+      context.userId,
+      context.activeSchoolId,
+      selectedClass === "all" ? null : String(selectedClass),
+    ).then((result) => {
+      setWork(result.items)
+      setClasses(result.classes)
+    })
+  }, [context, selectedClass])
+
+  const filteredWork = useMemo(() => {
+    if (filter === "all") return work
+    if (filter === "pending") return work.filter((w) => w.status === "Pending")
+    return work.filter((w) => w.status === "Graded")
+  }, [filter, work])
+
+  if (loading) {
+    return <div className="font-sans text-sm text-text-mid">Loading student work...</div>
+  }
 
   return (
     <div className="bg-card rounded-[20px] border border-gray-mid p-7">
@@ -34,15 +52,25 @@ export default function WorkPage() {
           <h3 className="font-serif text-xl font-bold text-navy mb-1">Student Work</h3>
           <p className="text-[13px] text-text-mid">Recent submissions & grading status</p>
         </div>
-        <BadgeChooser
-          selected={filter}
-          onSelect={setFilter}
-          options={[
-            { value: "all", label: "All" },
-            { value: "pending", label: "Pending" },
-            { value: "graded", label: "Graded" },
-          ]}
-        />
+        <div className="flex gap-2 flex-wrap">
+          <BadgeChooser
+            selected={selectedClass}
+            onSelect={setSelectedClass}
+            options={[
+              { value: "all", label: "All classes" },
+              ...classes.map((c) => ({ value: c.id, label: c.name })),
+            ]}
+          />
+          <BadgeChooser
+            selected={filter}
+            onSelect={setFilter}
+            options={[
+              { value: "all", label: "All" },
+              { value: "pending", label: "Pending" },
+              { value: "graded", label: "Graded" },
+            ]}
+          />
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
@@ -57,7 +85,7 @@ export default function WorkPage() {
               </div>
               <span className={cn(
                 "px-2.5 py-1 rounded-md text-[11px] font-semibold font-sans",
-                w.status === "Pending" ? "bg-abricot/15 text-abricot-dark" : "bg-violet/10 text-violet"
+                w.status === "Pending" ? "bg-abricot/15 text-abricot-dark" : "bg-violet/10 text-violet",
               )}>
                 {w.status}
               </span>
@@ -69,10 +97,10 @@ export default function WorkPage() {
                   {w.type}
                 </span>
               </div>
-              {w.score !== null ? (
+              {w.score !== null && w.score !== undefined ? (
                 <div className={cn(
                   "font-serif text-xl font-bold",
-                  w.score >= 80 ? "text-violet" : w.score >= 60 ? "text-abricot-dark" : "text-watermelon"
+                  w.score >= 80 ? "text-violet" : w.score >= 60 ? "text-abricot-dark" : "text-watermelon",
                 )}>
                   {w.score}%
                 </div>
@@ -83,6 +111,10 @@ export default function WorkPage() {
           </div>
         ))}
       </div>
+
+      {!filteredWork.length && (
+        <div className="mt-4 font-sans text-sm text-text-mid">No submissions yet.</div>
+      )}
     </div>
   )
 }

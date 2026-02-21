@@ -5,10 +5,53 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { ElevateLogo, ElevateButton, InputField, BadgeChooser } from "@/components/elevate/shared"
 import { Icons } from "@/components/elevate/icons"
+import { createClient } from "@/lib/supabase/client"
 
 export default function SignUpPage() {
   const router = useRouter()
   const [role, setRole] = useState<string | string[]>("student")
+  const [fullName, setFullName] = useState("")
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const onCreateAccount = async () => {
+    setLoading(true)
+    setError(null)
+
+    const supabase = createClient()
+    const normalizedRole = role === "teacher" ? "teacher" : role === "self" ? "self_learner" : "student"
+
+    const { error: signUpError } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          full_name: fullName,
+          role: normalizedRole,
+        },
+      },
+    })
+
+    if (signUpError) {
+      setError(signUpError.message)
+      setLoading(false)
+      return
+    }
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+
+    if (!user) {
+      setError("Account created. Please check your email to confirm your account.")
+      setLoading(false)
+      return
+    }
+
+    router.push(normalizedRole === "teacher" ? "/teacher" : "/student")
+  }
 
   return (
     <div className="min-h-screen bg-off-white flex items-center justify-center p-4">
@@ -25,9 +68,9 @@ export default function SignUpPage() {
         </div>
 
         <div className="px-7 pb-7 flex flex-col gap-3.5">
-          <InputField label="Full Name" placeholder="Enter your full name" icon={<Icons.User />} />
-          <InputField label="Email" placeholder="name@school.edu" icon={<Icons.Mail />} type="email" />
-          <InputField label="Password" placeholder="Create a password" icon={<Icons.Lock />} type="password" helper="At least 8 characters" />
+          <InputField label="Full Name" placeholder="Enter your full name" icon={<Icons.User />} value={fullName} onChange={setFullName} />
+          <InputField label="Email" placeholder="name@school.edu" icon={<Icons.Mail />} type="email" value={email} onChange={setEmail} />
+          <InputField label="Password" placeholder="Create a password" icon={<Icons.Lock />} type="password" helper="At least 8 characters" value={password} onChange={setPassword} />
 
           <div className="mt-1">
             <div className="text-[13px] font-semibold text-navy mb-2">I am a...</div>
@@ -43,13 +86,12 @@ export default function SignUpPage() {
           </div>
 
           <div className="mt-1">
-            <ElevateButton variant="primary" fullWidth iconRight icon={<Icons.ArrowRight />} onClick={() => {
-              if (role === "teacher") router.push("/teacher")
-              else router.push("/student")
-            }}>
+            <ElevateButton variant="primary" fullWidth iconRight icon={<Icons.ArrowRight />} onClick={onCreateAccount} disabled={loading}>
               Create Account
             </ElevateButton>
           </div>
+
+          {error && <p className="text-[13px] text-watermelon text-center -mt-1">{error}</p>}
 
           <p className="text-center text-[13px] text-text-light">
             Already have an account?{" "}

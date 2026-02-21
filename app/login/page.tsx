@@ -5,11 +5,47 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { ElevateLogo, ElevateButton, InputField } from "@/components/elevate/shared"
 import { Icons } from "@/components/elevate/icons"
+import { createClient } from "@/lib/supabase/client"
 
 export default function LoginPage() {
   const router = useRouter()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  const onSignIn = async () => {
+    setLoading(true)
+    setError(null)
+
+    const supabase = createClient()
+    const { error: signInError } = await supabase.auth.signInWithPassword({ email, password })
+
+    if (signInError) {
+      setError(signInError.message)
+      setLoading(false)
+      return
+    }
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+
+    if (!user) {
+      setError("Could not load your account session.")
+      setLoading(false)
+      return
+    }
+
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("default_role")
+      .eq("id", user.id)
+      .single()
+
+    const role = profile?.default_role || "student"
+    router.push(role === "teacher" ? "/teacher" : "/student")
+  }
 
   return (
     <div className="min-h-screen bg-off-white flex items-center justify-center p-4">
@@ -41,10 +77,14 @@ export default function LoginPage() {
           </div>
 
           <div className="mt-1">
-            <ElevateButton variant="primary" fullWidth iconRight icon={<Icons.ArrowRight />} onClick={() => router.push("/student")}>
+            <ElevateButton variant="primary" fullWidth iconRight icon={<Icons.ArrowRight />} onClick={onSignIn} disabled={loading}>
               Sign In
             </ElevateButton>
           </div>
+
+          {error && (
+            <p className="text-[13px] text-watermelon text-center -mt-1">{error}</p>
+          )}
 
           <div className="flex items-center gap-3 my-1">
             <div className="flex-1 h-px bg-gray-mid" />

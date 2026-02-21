@@ -1,46 +1,62 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import { Icons } from "@/components/elevate/icons"
-import { StatCard, ProgressBar, LessonCard, ElevateButton } from "@/components/elevate/shared"
-
-const upcomingWork = [
-  { title: "Grammar Quiz — Conditionals", due: "Today", type: "Quiz", urgent: true },
-  { title: "Essay: My Ideal Future", due: "Tomorrow", type: "Writing", urgent: true },
-  { title: "Listening Comp. #9", due: "Feb 24", type: "Listening", urgent: false },
-  { title: "Vocabulary Test — Week 12", due: "Feb 26", type: "Vocabulary", urgent: false },
-  { title: "Reading Analysis — Animal Farm", due: "Mar 1", type: "Reading", urgent: false },
-]
+import { StatCard, ProgressBar, LessonCard } from "@/components/elevate/shared"
+import { createClient } from "@/lib/supabase/client"
+import { useAppContext } from "@/hooks/use-app-context"
+import { fetchStudentDashboardData } from "@/lib/supabase/client-data"
 
 export default function StudentDashboard() {
+  const { context, loading } = useAppContext()
+  const [data, setData] = useState<{
+    overallScore: number
+    xpWeek: number
+    badgeCount: number
+    lessonsDone: number
+    upcomingWork: Array<{ title: string; due: string; type: string; urgent: boolean }>
+    skills: Array<{ label: string; score: number }>
+  } | null>(null)
+
+  useEffect(() => {
+    if (!context) return
+    const supabase = createClient()
+    fetchStudentDashboardData(supabase, context.userId, context.activeSchoolId).then(setData)
+  }, [context])
+
+  if (loading || !data) {
+    return <div className="font-sans text-sm text-text-mid">Loading dashboard...</div>
+  }
+
   return (
     <div className="flex flex-col gap-6">
-      {/* Stats Row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        <StatCard icon={<Icons.BarChart />} label="Overall Score" value="72%" accentBg="bg-navy/10" accentText="text-navy" />
-        <StatCard icon={<Icons.Zap />} label="XP This Week" value="1,240" accentBg="bg-abricot/10" accentText="text-abricot-dark" />
-        <StatCard icon={<Icons.Trophy />} label="Badges Earned" value="8" accentBg="bg-watermelon/10" accentText="text-watermelon" />
-        <StatCard icon={<Icons.Target />} label="Lessons Done" value="34" accentBg="bg-violet/10" accentText="text-violet" />
+        <StatCard icon={<Icons.BarChart />} label="Overall Score" value={`${data.overallScore}%`} accentBg="bg-navy/10" accentText="text-navy" />
+        <StatCard icon={<Icons.Zap />} label="XP This Week" value={String(data.xpWeek)} accentBg="bg-abricot/10" accentText="text-abricot-dark" />
+        <StatCard icon={<Icons.Trophy />} label="Badges Earned" value={String(data.badgeCount)} accentBg="bg-watermelon/10" accentText="text-watermelon" />
+        <StatCard icon={<Icons.Target />} label="Lessons Done" value={String(data.lessonsDone)} accentBg="bg-violet/10" accentText="text-violet" />
       </div>
 
-      {/* Two column: Skills + Upcoming */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Skill Progress */}
         <div className="bg-card rounded-2xl border border-gray-mid p-5">
           <h4 className="font-serif text-base font-bold text-navy mb-4">Skill Breakdown</h4>
           <div className="flex flex-col gap-3.5">
-            <ProgressBar value={85} label="Reading" sublabel="85%" color="bg-violet" />
-            <ProgressBar value={72} label="Grammar" sublabel="72%" color="bg-abricot" />
-            <ProgressBar value={58} label="Listening" sublabel="58%" color="bg-navy" />
-            <ProgressBar value={34} label="Speaking" sublabel="34%" color="bg-watermelon" />
-            <ProgressBar value={48} label="Writing" sublabel="48%" color="bg-violet-light" />
+            {(data.skills.length ? data.skills : [{ label: "Reading", score: 0 }, { label: "Grammar", score: 0 }, { label: "Listening", score: 0 }, { label: "Speaking", score: 0 }, { label: "Writing", score: 0 }]).map((s, i) => (
+              <ProgressBar
+                key={`${s.label}-${i}`}
+                value={s.score}
+                label={s.label}
+                sublabel={`${s.score}%`}
+                color={i === 0 ? "bg-violet" : i === 1 ? "bg-abricot" : i === 2 ? "bg-navy" : i === 3 ? "bg-watermelon" : "bg-violet-light"}
+              />
+            ))}
           </div>
         </div>
 
-        {/* Upcoming Work */}
         <div className="bg-card rounded-2xl border border-gray-mid p-5">
           <h4 className="font-serif text-base font-bold text-navy mb-4">Upcoming Work</h4>
           <div className="flex flex-col gap-2.5">
-            {upcomingWork.map((w, i) => (
+            {data.upcomingWork.map((w, i) => (
               <div
                 key={i}
                 className={`flex items-center justify-between px-3 py-2.5 rounded-[10px] border ${
@@ -63,11 +79,13 @@ export default function StudentDashboard() {
                 </button>
               </div>
             ))}
+            {!data.upcomingWork.length && (
+              <div className="font-sans text-sm text-text-mid">No upcoming assignments.</div>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Continue Learning */}
       <div>
         <h4 className="font-serif text-base font-bold text-navy mb-3">Continue Learning</h4>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">

@@ -1,13 +1,17 @@
 "use client"
 
+import { useEffect } from "react"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { Icons } from "@/components/elevate/icons"
 import { ElevateButton } from "@/components/elevate/shared"
+import { useAppContext } from "@/hooks/use-app-context"
+import { createClient } from "@/lib/supabase/client"
 
 const navItems = [
   { href: "/teacher", label: "Dashboard", icon: Icons.Home },
+  { href: "/teacher/classes", label: "Classes", icon: Icons.Book },
   { href: "/teacher/students", label: "Students", icon: Icons.Users },
   { href: "/teacher/documents", label: "Documents", icon: Icons.FileText },
   { href: "/teacher/work", label: "Student Work", icon: Icons.Clipboard },
@@ -16,6 +20,35 @@ const navItems = [
 
 export default function TeacherLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
+  const router = useRouter()
+  const { context, loading } = useAppContext()
+
+  useEffect(() => {
+    if (!loading && context && context.defaultRole !== "teacher") {
+      router.replace("/student")
+    }
+  }, [loading, context, router])
+
+  const onSignOut = async () => {
+    const supabase = createClient()
+    await supabase.auth.signOut()
+    router.push("/login")
+  }
+
+  if (loading || !context) {
+    return (
+      <div className="min-h-screen bg-off-white flex items-center justify-center">
+        <div className="font-sans text-sm text-text-mid">Loading workspace...</div>
+      </div>
+    )
+  }
+
+  const initials = context.fullName
+    .split(" ")
+    .map((p) => p[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase()
 
   return (
     <div className="min-h-screen bg-off-white">
@@ -24,24 +57,24 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
         <div className="max-w-[1200px] mx-auto px-6 py-5 flex justify-between items-center">
           <div className="flex items-center gap-3.5">
             <div className="w-12 h-12 rounded-[14px] bg-violet flex items-center justify-center font-serif font-extrabold text-lg text-white">
-              MD
+              {initials}
             </div>
             <div>
-              <div className="font-sans text-base font-semibold text-white">Ms. Clarke</div>
-              <div className="font-sans text-xs text-gray-mid">English Teacher &middot; Greenfield Academy</div>
+              <div className="font-sans text-base font-semibold text-white">{context.fullName}</div>
+              <div className="font-sans text-xs text-gray-mid">Teacher &middot; {context.schoolName || "No active school"}</div>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <ElevateButton variant="secondary" size="sm" icon={<Icons.Plus />}>New Class</ElevateButton>
-            <Link href="/login" className="w-9 h-9 rounded-[10px] bg-navy-mid flex items-center justify-center text-white/70 hover:text-white transition-colors">
+            <ElevateButton variant="secondary" size="sm" icon={<Icons.Plus />} onClick={() => router.push("/teacher/classes")}>New Class</ElevateButton>
+            <button onClick={onSignOut} className="w-9 h-9 rounded-[10px] bg-navy-mid flex items-center justify-center text-white/70 hover:text-white transition-colors cursor-pointer">
               <Icons.LogOut />
-            </Link>
+            </button>
           </div>
         </div>
         {/* Nav */}
         <nav className="max-w-[1200px] mx-auto px-6 flex gap-1 border-t border-navy-mid">
           {navItems.map((item) => {
-            const active = pathname === item.href
+            const active = pathname === item.href || (item.href !== "/teacher" && pathname.startsWith(`${item.href}/`))
             return (
               <Link
                 key={item.href}
