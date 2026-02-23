@@ -59,12 +59,12 @@ export default function StudentsPage() {
 
   const onProvisionStudent = async () => {
     if (!enrollClassId) {
-      setEnrollError("Select a class before creating student access.")
+      setEnrollError("Sélectionnez une classe avant de créer un accès élève.")
       return
     }
 
     if (!studentName.trim() || !studentEmail.trim() || !studentPassword.trim()) {
-      setEnrollError("Full name, email, and password are required.")
+      setEnrollError("Le nom complet, l'e-mail et le mot de passe sont obligatoires.")
       return
     }
 
@@ -89,34 +89,34 @@ export default function StudentsPage() {
       const payload = (await response.json().catch(() => ({}))) as { error?: string; email?: string }
 
       if (!response.ok) {
-        throw new Error(payload.error || "Could not provision student access.")
+        throw new Error(payload.error || "Impossible de créer l'accès élève.")
       }
 
-      setEnrollSuccess(`Access created for ${payload.email || studentEmail.trim().toLowerCase()}. Share the credentials with the student.`)
+      setEnrollSuccess(`Accès créé pour ${payload.email || studentEmail.trim().toLowerCase()}. Partagez les identifiants avec l'élève.`)
       setStudentName("")
       setStudentEmail("")
       setStudentPassword("")
       await loadStudents()
     } catch (e: any) {
-      setEnrollError(e.message || "Could not provision student access.")
+      setEnrollError(e.message || "Impossible de créer l'accès élève.")
     } finally {
       setEnrollBusy(false)
     }
   }
 
   if (loading || !data) {
-    return <div className="font-sans text-sm text-text-mid">Loading students...</div>
+    return <div className="font-sans text-sm text-text-mid">Chargement des élèves...</div>
   }
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <h4 className="font-serif text-lg font-bold text-navy">Student Profiles — {data.className}</h4>
+        <h4 className="font-serif text-lg font-bold text-navy">Profils élèves - {data.className}</h4>
         <BadgeChooser
           selected={selectedClass}
           onSelect={setSelectedClass}
           options={[
-            { value: "all", label: "All classes" },
+            { value: "all", label: "Toutes les classes" },
             ...data.classes.map((classItem) => ({ value: classItem.id, label: classItem.name })),
           ]}
         />
@@ -124,38 +124,38 @@ export default function StudentsPage() {
 
       <div className="grid grid-cols-1 xl:grid-cols-[1.15fr_2fr] gap-4">
         <div className="bg-card rounded-2xl border border-gray-mid p-5 flex flex-col gap-3.5">
-          <h5 className="font-serif text-base font-bold text-navy">Provision Student Access</h5>
+          <h5 className="font-serif text-base font-bold text-navy">Créer un accès élève</h5>
           <p className="font-sans text-[13px] text-text-mid">
-            Create login credentials and enroll the student directly in one class.
+            Créez des identifiants de connexion et inscrivez l'élève directement dans une classe.
           </p>
 
           <InputField
-            label="Full Name"
-            placeholder="e.g. Marie Dupont"
+            label="Nom complet"
+            placeholder="ex. Marie Dupont"
             icon={<Icons.User />}
             value={studentName}
             onChange={setStudentName}
           />
           <InputField
-            label="Email"
-            placeholder="student@school.edu"
+            label="E-mail"
+            placeholder="prenom.nom@ecole.fr"
             icon={<Icons.Mail />}
             type="email"
             value={studentEmail}
             onChange={setStudentEmail}
           />
           <InputField
-            label="Temporary Password"
-            placeholder="At least 8 characters"
+            label="Mot de passe temporaire"
+            placeholder="Au moins 8 caractères"
             icon={<Icons.Lock />}
             type="password"
-            helper="Share this password with the student."
+            helper="Partagez ce mot de passe avec l'élève."
             value={studentPassword}
             onChange={setStudentPassword}
           />
 
           <div>
-            <div className="font-sans text-[13px] font-semibold text-navy mb-2">Assign to class</div>
+            <div className="font-sans text-[13px] font-semibold text-navy mb-2">Affecter à une classe</div>
             {data.classes.length ? (
               <BadgeChooser
                 selected={enrollClassId}
@@ -163,7 +163,7 @@ export default function StudentsPage() {
                 options={data.classes.map((classItem) => ({ value: classItem.id, label: classItem.name }))}
               />
             ) : (
-              <div className="font-sans text-sm text-text-mid">Create a class before provisioning student accounts.</div>
+              <div className="font-sans text-sm text-text-mid">Créez une classe avant de créer des comptes élèves.</div>
             )}
           </div>
 
@@ -173,7 +173,7 @@ export default function StudentsPage() {
             onClick={onProvisionStudent}
             disabled={enrollBusy || !data.classes.length}
           >
-            Create Access
+            Créer l'accès
           </ElevateButton>
 
           {enrollError && <p className="font-sans text-sm text-watermelon">{enrollError}</p>}
@@ -182,10 +182,10 @@ export default function StudentsPage() {
 
         <div className="bg-card rounded-2xl border border-gray-mid overflow-hidden">
           <div className="hidden md:grid grid-cols-[2fr_1fr_1fr_1fr_100px] px-5 py-3 bg-gray-light font-sans text-[11px] font-semibold tracking-wider uppercase text-text-light">
-            <span>Student</span>
-            <span>Level</span>
+            <span>Élève</span>
+            <span>Niveau</span>
             <span>Score</span>
-            <span>Last Active</span>
+            <span>Dernière activité</span>
             <span>Actions</span>
           </div>
           {data.students.map((s, i) => (
@@ -215,7 +215,7 @@ export default function StudentsPage() {
             </div>
           ))}
           {!data.students.length && (
-            <div className="px-5 py-6 font-sans text-sm text-text-mid">No enrolled students found.</div>
+            <div className="px-5 py-6 font-sans text-sm text-text-mid">Aucun élève inscrit trouvé.</div>
           )}
         </div>
       </div>

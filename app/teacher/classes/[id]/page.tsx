@@ -186,7 +186,7 @@ export default function TeacherClassDetailPage() {
       else await archiveTeacherClass(supabase, data.classItem.id)
       await load()
     } catch (e: any) {
-      setError(e.message || "Could not update class status.")
+      setError(e.message || "Impossible de mettre à jour le statut de la classe.")
     } finally {
       setBusy(false)
     }
@@ -208,9 +208,9 @@ export default function TeacherClassDetailPage() {
       setCompany("")
       setCity("")
       await load()
-      setSuccess("Student added to roster.")
+      setSuccess("Élève ajouté à la liste.")
     } catch (e: any) {
-      setError(e.message || "Could not add student.")
+      setError(e.message || "Impossible d'ajouter l'élève.")
     } finally {
       setBusy(false)
     }
@@ -223,9 +223,9 @@ export default function TeacherClassDetailPage() {
       setSuccess(null)
       await removeClassRosterStudent(supabase, rosterId)
       await load()
-      setSuccess("Student removed from roster.")
+      setSuccess("Élève retiré de la liste.")
     } catch (e: any) {
-      setError(e.message || "Could not remove student.")
+      setError(e.message || "Impossible de retirer l'élève.")
     } finally {
       setBusy(false)
     }
@@ -249,22 +249,22 @@ export default function TeacherClassDetailPage() {
       const parsedRows = parseRosterCsv(text)
 
       if (!parsedRows.length) {
-        setError("No valid roster rows found in CSV.")
+        setError("Aucune ligne valide trouvée dans le CSV.")
         return
       }
 
       const inserted = await importClassRosterRows(supabase, classId, parsedRows)
       await load()
-      setSuccess(`${inserted} roster rows imported from CSV.`)
+      setSuccess(`${inserted} lignes importées depuis le CSV.`)
     } catch (e: any) {
-      setError(e.message || "Could not import CSV roster.")
+      setError(e.message || "Impossible d'importer la liste CSV.")
     } finally {
       setBusy(false)
     }
   }
 
   if (loading || !context || !data) {
-    return <div className="font-sans text-sm text-text-mid">Loading class...</div>
+    return <div className="font-sans text-sm text-text-mid">Chargement de la classe...</div>
   }
 
   return (
@@ -272,7 +272,7 @@ export default function TeacherClassDetailPage() {
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <Link href="/teacher/classes" className="font-sans text-xs text-violet hover:underline">&larr; Back to classes</Link>
+            <Link href="/teacher/classes" className="font-sans text-xs text-violet hover:underline">&larr; Retour aux classes</Link>
           </div>
           <h2 className="font-serif text-2xl font-bold text-navy">{data.classItem.name}</h2>
           <div className="font-sans text-[13px] text-text-mid mt-1">
@@ -283,28 +283,28 @@ export default function TeacherClassDetailPage() {
         <div className="flex items-center gap-2">
           <LevelBadge level={data.classItem.level} colorClass={levelColor(data.classItem.level)} />
           <ElevateButton variant="outlineViolet" size="sm" icon={<Icons.Download />} onClick={onImportClick} disabled={busy}>
-            Import
+            Importer
           </ElevateButton>
           <ElevateButton variant={data.classItem.archivedAt ? "secondary" : "outline"} size="sm" onClick={onToggleArchive} disabled={busy}>
-            {data.classItem.archivedAt ? "Restore" : "Archive"}
+            {data.classItem.archivedAt ? "Restaurer" : "Archiver"}
           </ElevateButton>
           <ElevateButton variant="ghost" size="sm" icon={<Icons.Edit />} onClick={() => router.push("/teacher/classes")}>
-            Edit Meta
+            Modifier les infos
           </ElevateButton>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-6">
         <div className="bg-card rounded-2xl border border-gray-mid p-5 overflow-hidden">
-          <h3 className="font-serif text-lg font-bold text-navy mb-4">Roster ({roster.length})</h3>
+          <h3 className="font-serif text-lg font-bold text-navy mb-4">Liste ({roster.length})</h3>
 
           <div className="hidden md:grid grid-cols-[40px_1.2fr_1.2fr_2fr_1fr_90px] gap-2 px-3 py-2 rounded-lg bg-gray-light border border-gray-mid font-sans text-[11px] font-semibold tracking-wider uppercase text-text-light">
             <span>#</span>
             <span>Nom</span>
-            <span>Prenom</span>
+            <span>Prénom</span>
             <span>Entreprise</span>
             <span>Ville</span>
-            <span>Action</span>
+            <span>Actions</span>
           </div>
 
           <div className="flex flex-col gap-2 mt-2">
@@ -315,31 +315,31 @@ export default function TeacherClassDetailPage() {
                 <span className="font-sans text-sm text-text-dark">{student.firstName}</span>
                 <span className="font-sans text-sm text-text-mid">{student.company || "—"}</span>
                 <span className="font-sans text-sm text-text-mid">{student.city || "—"}</span>
-                <ElevateButton variant="outline" size="sm" onClick={() => onRemoveStudent(student.id)} disabled={busy}>Remove</ElevateButton>
+                <ElevateButton variant="outline" size="sm" onClick={() => onRemoveStudent(student.id)} disabled={busy}>Retirer</ElevateButton>
               </div>
             ))}
 
             {!roster.length && (
-              <div className="font-sans text-sm text-text-mid">No roster entries yet.</div>
+              <div className="font-sans text-sm text-text-mid">Aucune entrée dans la liste pour le moment.</div>
             )}
           </div>
         </div>
 
         <div className="bg-card rounded-2xl border border-gray-mid p-5 flex flex-col gap-3">
-          <h3 className="font-serif text-lg font-bold text-navy">Add Roster Student</h3>
-          <p className="font-sans text-[13px] text-text-mid">Add non-login roster records with company and city details.</p>
+          <h3 className="font-serif text-lg font-bold text-navy">Ajouter un élève à la liste</h3>
+          <p className="font-sans text-[13px] text-text-mid">Ajoutez des élèves sans compte avec entreprise et ville.</p>
 
-          <InputField label="Nom" placeholder="e.g. DUPONT" icon={<Icons.User />} value={lastName} onChange={setLastName} />
-          <InputField label="Prenom" placeholder="e.g. Marie" icon={<Icons.User />} value={firstName} onChange={setFirstName} />
-          <InputField label="Entreprise" placeholder="e.g. Supermarché MATCH" icon={<Icons.Book />} value={company} onChange={setCompany} />
-          <InputField label="Ville" placeholder="e.g. THIONVILLE" icon={<Icons.Globe />} value={city} onChange={setCity} />
+          <InputField label="Nom" placeholder="ex. DUPONT" icon={<Icons.User />} value={lastName} onChange={setLastName} />
+          <InputField label="Prénom" placeholder="ex. Marie" icon={<Icons.User />} value={firstName} onChange={setFirstName} />
+          <InputField label="Entreprise" placeholder="ex. Supermarché MATCH" icon={<Icons.Book />} value={company} onChange={setCompany} />
+          <InputField label="Ville" placeholder="ex. THIONVILLE" icon={<Icons.Globe />} value={city} onChange={setCity} />
 
           <ElevateButton variant="primary" fullWidth icon={<Icons.Plus />} onClick={onAddStudent} disabled={busy}>
-            Add to Roster
+            Ajouter à la liste
           </ElevateButton>
 
           <div className="font-sans text-xs text-text-light">
-            CSV headers supported: <strong>Nom, Prenom, Entreprise, Ville</strong>.
+            En-têtes CSV acceptés : <strong>Nom, Prénom, Entreprise, Ville</strong>.
           </div>
         </div>
       </div>

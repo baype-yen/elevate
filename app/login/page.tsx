@@ -31,7 +31,7 @@ export default function LoginPage() {
     } = await supabase.auth.getUser()
 
     if (!user) {
-      setError("Could not load your account session.")
+      setError("Impossible de charger votre session de compte.")
       setLoading(false)
       return
     }
@@ -57,27 +57,27 @@ export default function LoginPage() {
             <div className="w-12 h-12 rounded-[14px] bg-abricot inline-flex items-center justify-center text-navy font-serif font-black text-[22px] mb-3">
               E
             </div>
-            <h1 className="font-serif text-[22px] font-bold text-white mb-1">Welcome back</h1>
-            <p className="text-[13px] text-gray-mid">Sign in with your school-provided account</p>
+            <h1 className="font-serif text-[22px] font-bold text-white mb-1">Bon retour</h1>
+            <p className="text-[13px] text-gray-mid">Connectez-vous avec le compte fourni par votre établissement scolaire</p>
           </div>
         </div>
 
         {/* Form */}
         <div className="px-7 pt-6 pb-7 flex flex-col gap-3.5">
-          <InputField label="Email" placeholder="name@school.edu" icon={<Icons.Mail />} type="email" value={email} onChange={setEmail} />
-          <InputField label="Password" placeholder="Enter your password" icon={<Icons.Lock />} type="password" value={password} onChange={setPassword} />
+          <InputField label="E-mail" placeholder="nom@ecole.fr" icon={<Icons.Mail />} type="email" value={email} onChange={setEmail} />
+          <InputField label="Mot de passe" placeholder="Entrez votre mot de passe" icon={<Icons.Lock />} type="password" value={password} onChange={setPassword} />
 
           <div className="flex justify-between items-center -mt-1">
             <label className="flex items-center gap-1.5 font-sans text-[13px] text-text-mid cursor-pointer">
               <div className="w-[18px] h-[18px] rounded border-2 border-gray-mid bg-card" />
-              Remember me
+              Se souvenir de moi
             </label>
-            <span className="font-sans text-[13px] text-violet font-semibold cursor-pointer hover:underline">Forgot password?</span>
+            <span className="font-sans text-[13px] text-violet font-semibold cursor-pointer hover:underline">Mot de passe oublié ?</span>
           </div>
 
           <div className="mt-1">
             <ElevateButton variant="primary" fullWidth iconRight icon={<Icons.ArrowRight />} onClick={onSignIn} disabled={loading}>
-              Sign In
+              Se connecter
             </ElevateButton>
           </div>
 
@@ -87,14 +87,14 @@ export default function LoginPage() {
 
           <div className="flex items-center gap-3 my-1">
             <div className="flex-1 h-px bg-gray-mid" />
-            <span className="text-xs text-text-light">or</span>
+            <span className="text-xs text-text-light">ou</span>
             <div className="flex-1 h-px bg-gray-mid" />
           </div>
 
-          <ElevateButton variant="outline" fullWidth>Continue with School SSO</ElevateButton>
+          <ElevateButton variant="outline" fullWidth>Continuer avec le SSO de l'établissement</ElevateButton>
 
           <p className="text-center text-[13px] text-text-light">
-            Account access is provided by your teacher or school administrator.
+            L'accès au compte est fourni par votre enseignant ou l'administrateur de l'établissement.
           </p>
         </div>
       </div>

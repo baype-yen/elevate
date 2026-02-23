@@ -10,10 +10,11 @@ import { useAppContext } from "@/hooks/use-app-context"
 import { createClient } from "@/lib/supabase/client"
 
 const navItems = [
-  { href: "/student", label: "Dashboard", icon: Icons.Home },
-  { href: "/student/exercises", label: "Exercises", icon: Icons.Target },
-  { href: "/student/calendar", label: "Calendar", icon: Icons.Calendar },
-  { href: "/student/progress", label: "Progress", icon: Icons.BarChart },
+  { href: "/student", label: "Tableau de bord", icon: Icons.Home },
+  { href: "/student/exercises", label: "Exercices", icon: Icons.Target },
+  { href: "/student/documents", label: "Documents", icon: Icons.FileText },
+  { href: "/student/calendar", label: "Calendrier", icon: Icons.Calendar },
+  { href: "/student/progress", label: "Progression", icon: Icons.BarChart },
 ]
 
 export default function StudentLayout({ children }: { children: React.ReactNode }) {
@@ -36,7 +37,7 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
   if (loading || !context) {
     return (
       <div className="min-h-screen bg-off-white flex items-center justify-center">
-        <div className="font-sans text-sm text-text-mid">Loading workspace...</div>
+        <div className="font-sans text-sm text-text-mid">Chargement de l'espace...</div>
       </div>
     )
   }
@@ -60,8 +61,8 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
               {initials}
             </div>
             <div>
-              <div className="font-sans text-base font-semibold text-white">Welcome back, {context.fullName}!</div>
-              <div className="font-sans text-xs text-gray-mid">{level} &middot; {context.schoolName || "Personal workspace"}</div>
+              <div className="font-sans text-base font-semibold text-white">Bon retour, {context.fullName} !</div>
+              <div className="font-sans text-xs text-gray-mid">{level} &middot; {context.schoolName || "Espace personnel"}</div>
             </div>
           </div>
           <div className="flex items-center gap-3">

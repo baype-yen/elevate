@@ -7,8 +7,8 @@ const _roboto = Roboto({ subsets: ["latin"], weight: ["300", "400", "500", "700"
 const _robotoSlab = Roboto_Slab({ subsets: ["latin"], weight: ["400", "500", "600", "700", "800", "900"] });
 
 export const metadata: Metadata = {
-  title: 'Elevate — Personalized Language Learning',
-  description: 'Personalized language learning from A1 to C2. Track progress, complete exercises, and elevate your skills.',
+  title: 'Elevate — Apprentissage des langues personnalisé',
+  description: 'Apprentissage des langues personnalisé de A1 à C2. Suivez votre progression, réalisez des exercices et développez vos compétences.',
   generator: 'v0.app',
   icons: {
     icon: [
@@ -39,7 +39,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en">
+    <html lang="fr">
       <body className="font-sans antialiased">
         {children}
         <Analytics />

@@ -19,7 +19,7 @@ export async function POST(request: Request) {
   try {
     payload = (await request.json()) as EnrollStudentPayload
   } catch {
-    return badRequest("Invalid request payload.")
+    return badRequest("Charge utile de requête invalide.")
   }
 
   const fullName = (payload.fullName || "").trim()
@@ -28,15 +28,15 @@ export async function POST(request: Request) {
   const classId = (payload.classId || "").trim()
 
   if (!fullName || !email || !password || !classId) {
-    return badRequest("Full name, email, password, and class are required.")
+    return badRequest("Le nom complet, l'e-mail, le mot de passe et la classe sont obligatoires.")
   }
 
   if (!email.includes("@")) {
-    return badRequest("Please enter a valid email address.")
+    return badRequest("Veuillez saisir une adresse e-mail valide.")
   }
 
   if (password.length < 8) {
-    return badRequest("Password must be at least 8 characters.")
+    return badRequest("Le mot de passe doit contenir au moins 8 caractères.")
   }
 
   const supabase = await createServerClient()
@@ -45,7 +45,7 @@ export async function POST(request: Request) {
   } = await supabase.auth.getUser()
 
   if (!user) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401 })
+    return NextResponse.json({ error: "Non autorisé." }, { status: 401 })
   }
 
   const { data: classRow, error: classError } = await supabase
@@ -56,22 +56,22 @@ export async function POST(request: Request) {
     .single()
 
   if (classError || !classRow) {
-    return NextResponse.json({ error: "Class not found or access denied." }, { status: 403 })
+    return NextResponse.json({ error: "Classe introuvable ou accès refusé." }, { status: 403 })
   }
 
   if (classRow.archived_at) {
-    return badRequest("Cannot enroll students into an archived class.")
+    return badRequest("Impossible d'inscrire des élèves dans une classe archivée.")
   }
 
   if (!classRow.school_id) {
-    return badRequest("Class must belong to an active school.")
+    return badRequest("La classe doit appartenir à un établissement actif.")
   }
 
   let admin: ReturnType<typeof createAdminClient>
   try {
     admin = createAdminClient()
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Supabase admin client is not configured."
+    const message = error instanceof Error ? error.message : "Le client admin Supabase n'est pas configuré."
     return NextResponse.json({ error: message }, { status: 500 })
   }
 
@@ -89,8 +89,8 @@ export async function POST(request: Request) {
     const lowered = createUserError?.message?.toLowerCase() || ""
     const message =
       lowered.includes("already") || lowered.includes("exists")
-        ? "An account with this email already exists."
-        : createUserError?.message || "Could not create student account."
+        ? "Un compte avec cet e-mail existe déjà."
+        : createUserError?.message || "Impossible de créer le compte élève."
 
     return NextResponse.json({ error: message }, { status: 400 })
   }
@@ -116,7 +116,7 @@ export async function POST(request: Request) {
 
   if (profileError) {
     await rollbackUser()
-    return NextResponse.json({ error: "Student profile setup failed." }, { status: 500 })
+    return NextResponse.json({ error: "La configuration du profil élève a échoué." }, { status: 500 })
   }
 
   const { error: membershipError } = await admin
@@ -136,7 +136,7 @@ export async function POST(request: Request) {
 
   if (membershipError) {
     await rollbackUser()
-    return NextResponse.json({ error: "Student membership setup failed." }, { status: 500 })
+    return NextResponse.json({ error: "La configuration de l'adhésion élève a échoué." }, { status: 500 })
   }
 
   const { error: enrollmentError } = await supabase
@@ -153,7 +153,7 @@ export async function POST(request: Request) {
 
   if (enrollmentError) {
     await rollbackUser()
-    return NextResponse.json({ error: "Student enrollment failed." }, { status: 500 })
+    return NextResponse.json({ error: "L'inscription de l'élève a échoué." }, { status: 500 })
   }
 
   await supabase.from("activity_events").insert({
@@ -163,7 +163,7 @@ export async function POST(request: Request) {
     target_user_id: studentId,
     event_type: "milestone",
     payload: {
-      text: `${fullName} was enrolled with direct login access.`,
+      text: `${fullName} a été inscrit avec un accès direct au compte.`,
     },
   })
 

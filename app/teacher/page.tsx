@@ -57,7 +57,7 @@ export default function TeacherDashboard() {
   const onCreateClass = async () => {
     if (!context) return
     if (!context.activeSchoolId) {
-      setNewClassError("No active school selected.")
+      setNewClassError("Aucun établissement actif sélectionné.")
       return
     }
 
@@ -72,47 +72,47 @@ export default function TeacherDashboard() {
       await load()
       router.push(`/teacher/classes/${classId}`)
     } catch (e: any) {
-      setNewClassError(e.message || "Could not create class.")
+      setNewClassError(e.message || "Impossible de créer la classe.")
     } finally {
       setNewClassLoading(false)
     }
   }
 
   if (loading || !context || !data) {
-    return <div className="font-sans text-sm text-text-mid">Loading dashboard...</div>
+    return <div className="font-sans text-sm text-text-mid">Chargement du tableau de bord...</div>
   }
 
   return (
     <div className="flex flex-col gap-6">
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        <StatCard icon={<Icons.Users />} label="Total Students" value={String(data.totalStudents)} accentBg="bg-navy/10" accentText="text-navy" />
-        <StatCard icon={<Icons.Book />} label="Active Classes" value={String(data.activeClasses)} accentBg="bg-violet/10" accentText="text-violet" />
-        <StatCard icon={<Icons.Clipboard />} label="Pending Reviews" value={String(data.pendingReviews)} accentBg="bg-watermelon/10" accentText="text-watermelon" />
-        <StatCard icon={<Icons.Trophy />} label="Avg. Score" value={`${data.overallAvg}%`} accentBg="bg-abricot/10" accentText="text-abricot-dark" />
+        <StatCard icon={<Icons.Users />} label="Élèves au total" value={String(data.totalStudents)} accentBg="bg-navy/10" accentText="text-navy" />
+        <StatCard icon={<Icons.Book />} label="Classes actives" value={String(data.activeClasses)} accentBg="bg-violet/10" accentText="text-violet" />
+        <StatCard icon={<Icons.Clipboard />} label="Corrections en attente" value={String(data.pendingReviews)} accentBg="bg-watermelon/10" accentText="text-watermelon" />
+        <StatCard icon={<Icons.Trophy />} label="Moyenne" value={`${data.overallAvg}%`} accentBg="bg-abricot/10" accentText="text-abricot-dark" />
       </div>
 
       <div>
-        <h4 className="font-serif text-lg font-bold text-navy mb-3.5">My Classes</h4>
+        <h4 className="font-serif text-lg font-bold text-navy mb-3.5">Mes classes</h4>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
           {data.classCards.map((cls) => (
             <div key={cls.id} className="bg-card rounded-2xl border border-gray-mid p-5 flex flex-col gap-3">
               <div className="flex justify-between items-start">
                 <div>
                   <div className="font-serif text-[15px] font-bold text-navy">{cls.name}</div>
-                  <div className="font-sans text-xs text-text-light">{cls.students} students</div>
+                  <div className="font-sans text-xs text-text-light">{cls.students} élèves</div>
                 </div>
                 <LevelBadge level={cls.level} colorClass={colorLevel[cls.level] || "violet"} active />
               </div>
-              <ProgressBar value={cls.avg} label="Class Average" sublabel={`${cls.avg}%`} color={colorToBg[cls.level.toLowerCase()] || "bg-violet"} />
+              <ProgressBar value={cls.avg} label="Moyenne de classe" sublabel={`${cls.avg}%`} color={colorToBg[cls.level.toLowerCase()] || "bg-violet"} />
               <div className="flex gap-2">
-                <ElevateButton variant="primary" size="sm" icon={<Icons.Eye />} onClick={() => router.push(`/teacher/classes/${cls.id}`)}>View</ElevateButton>
-                <ElevateButton variant="ghost" size="sm" icon={<Icons.Edit />} onClick={() => router.push("/teacher/classes")}>Edit</ElevateButton>
+                <ElevateButton variant="primary" size="sm" icon={<Icons.Eye />} onClick={() => router.push(`/teacher/classes/${cls.id}`)}>Voir</ElevateButton>
+                <ElevateButton variant="ghost" size="sm" icon={<Icons.Edit />} onClick={() => router.push("/teacher/classes")}>Modifier</ElevateButton>
               </div>
             </div>
           ))}
           {!data.classCards.length && (
             <div className="bg-card rounded-2xl border border-gray-mid p-5 font-sans text-sm text-text-mid">
-              No classes yet. Create your first class below.
+              Aucune classe pour le moment. Créez votre première classe ci-dessous.
             </div>
           )}
         </div>
@@ -122,12 +122,12 @@ export default function TeacherDashboard() {
         <div className="w-14 h-14 rounded-2xl bg-gray-light flex items-center justify-center text-navy">
           <Icons.Plus />
         </div>
-        <h4 className="font-serif text-base font-bold text-navy">Create a New Class</h4>
+        <h4 className="font-serif text-base font-bold text-navy">Créer une nouvelle classe</h4>
         <p className="text-[13px] text-text-mid text-center max-w-[340px]">
-          Set up a class, assign levels, invite students, and start tracking their progress.
+          Configurez une classe, assignez un niveau, invitez des élèves et suivez leur progression.
         </p>
         <div className="w-full max-w-[400px]">
-          <InputField placeholder="e.g. Year 10B — English A2" icon={<Icons.Book />} value={newClassName} onChange={setNewClassName} />
+          <InputField placeholder="ex. 10B - Anglais A2" icon={<Icons.Book />} value={newClassName} onChange={setNewClassName} />
         </div>
         <div className="w-full max-w-[500px]">
           <RadioCardChooser
@@ -145,7 +145,7 @@ export default function TeacherDashboard() {
           />
         </div>
         <div className="w-full max-w-[400px] mt-1">
-          <ElevateButton variant="primary" fullWidth icon={<Icons.Plus />} onClick={onCreateClass} disabled={newClassLoading}>Create Class</ElevateButton>
+          <ElevateButton variant="primary" fullWidth icon={<Icons.Plus />} onClick={onCreateClass} disabled={newClassLoading}>Créer la classe</ElevateButton>
         </div>
         {newClassError && <p className="font-sans text-sm text-watermelon">{newClassError}</p>}
       </div>

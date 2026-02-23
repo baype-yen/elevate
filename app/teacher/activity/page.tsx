@@ -32,13 +32,13 @@ export default function ActivityPage() {
   }, [context])
 
   if (loading) {
-    return <div className="font-sans text-sm text-text-mid">Loading activity...</div>
+    return <div className="font-sans text-sm text-text-mid">Chargement de l'activité...</div>
   }
 
   return (
     <div className="bg-card rounded-[20px] border border-gray-mid p-7 max-w-[620px]">
-      <h3 className="font-serif text-xl font-bold text-navy mb-1">Recent Activity</h3>
-      <p className="text-[13px] text-text-mid mb-5">{"What's been happening across your classes"}</p>
+      <h3 className="font-serif text-xl font-bold text-navy mb-1">Activité récente</h3>
+      <p className="text-[13px] text-text-mid mb-5">{"Ce qu'il se passe dans vos classes"}</p>
 
       <div className="flex flex-col">
         {activities.map((act, i) => (
@@ -50,13 +50,13 @@ export default function ActivityPage() {
               <div className="font-sans text-[13px] font-medium text-text-dark leading-snug">{act.text}</div>
               <div className="font-sans text-[11px] text-text-light mt-0.5">{act.time}</div>
             </div>
-            {act.type === "alert" && <ElevateButton variant="watermelon" size="sm">Nudge</ElevateButton>}
+            {act.type === "alert" && <ElevateButton variant="watermelon" size="sm">Relancer</ElevateButton>}
           </div>
         ))}
       </div>
 
       {!activities.length && (
-        <div className="font-sans text-sm text-text-mid">No recent activity yet.</div>
+        <div className="font-sans text-sm text-text-mid">Aucune activité récente.</div>
       )}
     </div>
   )

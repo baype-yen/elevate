@@ -7,33 +7,33 @@ import { ElevateButton, LevelBadge, ProgressBar } from "@/components/elevate/sha
 const features = [
   {
     icon: <Icons.Target />,
-    title: "Adaptive Learning",
-    desc: "Lessons that adapt to your CEFR level from A1 to C2, with personalized exercises.",
+    title: "Apprentissage adaptatif",
+    desc: "Des leçons qui s'adaptent à votre niveau CECRL de A1 à C2, avec des exercices personnalisés.",
   },
   {
     icon: <Icons.BarChart />,
-    title: "Track Progress",
-    desc: "Detailed skill breakdowns, score evolution, and teacher feedback in real time.",
+    title: "Suivre la progression",
+    desc: "Un détail précis des compétences, l'évolution des scores et les retours des enseignants en temps réel.",
   },
   {
     icon: <Icons.Users />,
-    title: "Class Management",
-    desc: "Teachers can manage classes, review student work, and monitor activity at a glance.",
+    title: "Gestion des classes",
+    desc: "Les enseignants peuvent gérer leurs classes, corriger les travaux élèves et suivre l'activité d'un coup d'œil.",
   },
   {
     icon: <Icons.Trophy />,
-    title: "Earn Achievements",
-    desc: "Stay motivated with badges, streaks, and XP as you practice and improve.",
+    title: "Obtenir des récompenses",
+    desc: "Restez motivé avec des badges, des séries et des XP au fil de votre pratique.",
   },
 ]
 
 const levels = [
-  { level: "A1", label: "Beginner", color: "violet" },
-  { level: "A2", label: "Elementary", color: "violet" },
-  { level: "B1", label: "Intermediate", color: "abricot" },
-  { level: "B2", label: "Upper Int.", color: "abricot" },
-  { level: "C1", label: "Advanced", color: "watermelon" },
-  { level: "C2", label: "Mastery", color: "navy" },
+  { level: "A1", label: "Débutant", color: "violet" },
+  { level: "A2", label: "Élémentaire", color: "violet" },
+  { level: "B1", label: "Intermédiaire", color: "abricot" },
+  { level: "B2", label: "Intermédiaire +", color: "abricot" },
+  { level: "C1", label: "Avancé", color: "watermelon" },
+  { level: "C2", label: "Maîtrise", color: "navy" },
 ]
 
 export default function HomePage() {
@@ -56,10 +56,10 @@ export default function HomePage() {
             </div>
             <div className="flex items-center gap-3">
               <Link href="/login">
-                <ElevateButton variant="ghost" size="sm" className="text-white hover:bg-navy-mid border-transparent">Sign In</ElevateButton>
+                <ElevateButton variant="ghost" size="sm" className="text-white hover:bg-navy-mid border-transparent">Connexion</ElevateButton>
               </Link>
               <Link href="/login">
-                <ElevateButton variant="secondary" size="sm">Student Access</ElevateButton>
+                <ElevateButton variant="secondary" size="sm">Accès élève</ElevateButton>
               </Link>
             </div>
           </nav>
@@ -67,20 +67,20 @@ export default function HomePage() {
           {/* Hero Content */}
           <div className="max-w-[600px]">
             <div className="inline-block px-3 py-1 rounded-md bg-abricot/15 text-abricot font-sans text-[11px] font-semibold tracking-wider uppercase mb-4">
-              Personalized Language Learning
+              Apprentissage des langues personnalisé
             </div>
             <h1 className="font-serif text-[44px] font-black text-white leading-tight mb-4 text-balance">
-              Elevate Your Language Skills
+              Élevez votre niveau en langues
             </h1>
             <p className="font-sans text-base text-gray-mid leading-relaxed mb-8 max-w-[480px]">
-              From A1 to C2 — personalized lessons, adaptive exercises, and real-time progress tracking for students and teachers.
+              De A1 à C2 — des leçons personnalisées, des exercices adaptatifs et un suivi en temps réel pour les élèves et les enseignants.
             </p>
             <div className="flex gap-3 flex-wrap">
               <Link href="/login">
-                <ElevateButton variant="secondary" size="lg" iconRight icon={<Icons.ArrowRight />}>Access Your Account</ElevateButton>
+                <ElevateButton variant="secondary" size="lg" iconRight icon={<Icons.ArrowRight />}>Accéder à votre compte</ElevateButton>
               </Link>
               <Link href="/teacher">
-                <ElevateButton variant="outline" size="lg" className="border-white/30 text-white hover:bg-navy-mid">Teacher Dashboard</ElevateButton>
+                <ElevateButton variant="outline" size="lg" className="border-white/30 text-white hover:bg-navy-mid">Tableau de bord enseignant</ElevateButton>
               </Link>
             </div>
           </div>
@@ -100,8 +100,8 @@ export default function HomePage() {
       {/* Features */}
       <section className="max-w-[1100px] mx-auto px-6 py-16">
         <div className="text-center mb-12">
-          <div className="font-sans text-[11px] font-medium tracking-wider uppercase text-text-light mb-1.5">Platform</div>
-          <h2 className="font-serif text-[28px] font-bold text-navy text-balance">Everything You Need to Succeed</h2>
+          <div className="font-sans text-[11px] font-medium tracking-wider uppercase text-text-light mb-1.5">Plateforme</div>
+          <h2 className="font-serif text-[28px] font-bold text-navy text-balance">Tout ce qu'il vous faut pour réussir</h2>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
           {features.map((f, i) => (
@@ -120,31 +120,31 @@ export default function HomePage() {
       <section className="bg-navy">
         <div className="max-w-[1100px] mx-auto px-6 py-16">
           <div className="text-center mb-10">
-            <h2 className="font-serif text-[28px] font-bold text-white mb-2 text-balance">Track Every Skill</h2>
-            <p className="font-sans text-sm text-gray-mid">Detailed breakdowns across reading, grammar, listening, speaking, and writing.</p>
+            <h2 className="font-serif text-[28px] font-bold text-white mb-2 text-balance">Suivez chaque compétence</h2>
+            <p className="font-sans text-sm text-gray-mid">Détails précis en lecture, grammaire, écoute, oral et écrit.</p>
           </div>
           <div className="max-w-[500px] mx-auto bg-card rounded-2xl p-6 flex flex-col gap-4">
-            <ProgressBar value={85} label="Reading" sublabel="85%" color="bg-violet" />
-            <ProgressBar value={72} label="Grammar" sublabel="72%" color="bg-abricot" />
-            <ProgressBar value={58} label="Listening" sublabel="58%" color="bg-navy" />
-            <ProgressBar value={34} label="Speaking" sublabel="34%" color="bg-watermelon" />
-            <ProgressBar value={48} label="Writing" sublabel="48%" color="bg-violet-light" />
+            <ProgressBar value={85} label="Lecture" sublabel="85%" color="bg-violet" />
+            <ProgressBar value={72} label="Grammaire" sublabel="72%" color="bg-abricot" />
+            <ProgressBar value={58} label="Écoute" sublabel="58%" color="bg-navy" />
+            <ProgressBar value={34} label="Oral" sublabel="34%" color="bg-watermelon" />
+            <ProgressBar value={48} label="Écrit" sublabel="48%" color="bg-violet-light" />
           </div>
         </div>
       </section>
 
       {/* CTA */}
       <section className="max-w-[1100px] mx-auto px-6 py-16 text-center">
-        <h2 className="font-serif text-[28px] font-bold text-navy mb-3 text-balance">Ready to Elevate?</h2>
+        <h2 className="font-serif text-[28px] font-bold text-navy mb-3 text-balance">Prêt à progresser avec Elevate ?</h2>
         <p className="font-sans text-sm text-text-mid mb-6 max-w-[400px] mx-auto">
-          Join thousands of students and teachers already using Elevate to master language learning.
+          Rejoignez des milliers d'élèves et d'enseignants qui utilisent déjà Elevate pour progresser en langues.
         </p>
         <div className="flex gap-3 justify-center flex-wrap">
           <Link href="/login">
-            <ElevateButton variant="primary" size="lg" iconRight icon={<Icons.ArrowRight />}>Go to Sign In</ElevateButton>
+            <ElevateButton variant="primary" size="lg" iconRight icon={<Icons.ArrowRight />}>Aller à la connexion</ElevateButton>
           </Link>
           <Link href="/student">
-            <ElevateButton variant="outline" size="lg">Explore Student View</ElevateButton>
+            <ElevateButton variant="outline" size="lg">Voir l'espace élève</ElevateButton>
           </Link>
         </div>
       </section>
@@ -159,7 +159,7 @@ export default function HomePage() {
             <span className="font-serif text-[15px] font-bold text-navy">Elevate</span>
           </div>
           <span className="font-sans text-xs text-text-light">
-            Personalized Language Learning &middot; A1 to C2
+            Apprentissage des langues personnalisé &middot; A1 à C2
           </span>
         </div>
       </footer>

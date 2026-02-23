@@ -31,7 +31,7 @@ export default function CalendarPage() {
   }, [month])
 
   if (loading) {
-    return <div className="font-sans text-sm text-text-mid">Loading calendar...</div>
+    return <div className="font-sans text-sm text-text-mid">Chargement du calendrier...</div>
   }
 
   return (
@@ -39,8 +39,8 @@ export default function CalendarPage() {
       <div className="bg-card rounded-[20px] border border-gray-mid p-7">
         <div className="flex justify-between items-center mb-5">
           <div>
-            <h3 className="font-serif text-xl font-bold text-navy mb-1">Exercise Calendar</h3>
-            <p className="text-[13px] text-text-mid">Track daily practice & exercise completion</p>
+            <h3 className="font-serif text-xl font-bold text-navy mb-1">Calendrier des exercices</h3>
+            <p className="text-[13px] text-text-mid">Suivez la pratique quotidienne et la réalisation des exercices</p>
           </div>
           <div className="flex items-center gap-3">
             <button
@@ -48,7 +48,7 @@ export default function CalendarPage() {
               onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))}
             ><Icons.ChevronLeft /></button>
             <span className="font-serif text-base font-bold text-navy">
-              {month.toLocaleDateString(undefined, { month: "long", year: "numeric" })}
+              {month.toLocaleDateString("fr-FR", { month: "long", year: "numeric" })}
             </span>
             <button
               className="text-navy flex cursor-pointer"
@@ -58,7 +58,7 @@ export default function CalendarPage() {
         </div>
 
         <div className="grid grid-cols-7 gap-1.5 mb-1.5">
-          {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
+          {["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"].map((d) => (
             <div key={d} className="text-center font-sans text-[11px] font-semibold text-text-light tracking-wider uppercase py-1.5">
               {d}
             </div>
@@ -108,9 +108,9 @@ export default function CalendarPage() {
 
         <div className="flex gap-5 mt-[18px] justify-center">
           {[
-            { color: "bg-violet", label: "All exercises done" },
-            { color: "bg-abricot", label: "Partial" },
-            { color: "bg-watermelon", label: "Missed" },
+            { color: "bg-violet", label: "Tous les exercices faits" },
+            { color: "bg-abricot", label: "Partiel" },
+            { color: "bg-watermelon", label: "Manqué" },
           ].map((l, i) => (
             <div key={i} className="flex items-center gap-1.5">
               <div className={cn("w-2.5 h-2.5 rounded-sm", l.color)} />
@@ -121,12 +121,12 @@ export default function CalendarPage() {
 
         <div className="mt-[18px] p-4 rounded-xl bg-navy flex items-center justify-between">
           <div>
-            <div className="font-sans text-xs text-gray-mid">Today</div>
+            <div className="font-sans text-xs text-gray-mid">Aujourd'hui</div>
             <div className="font-serif text-base font-bold text-white mt-0.5">
-              {(exerciseData[new Date().getDate()]?.count || 0)} of {(exerciseData[new Date().getDate()]?.count ? 3 : 3)} exercises completed
+              {(exerciseData[new Date().getDate()]?.count || 0)} sur {(exerciseData[new Date().getDate()]?.count ? 3 : 3)} exercices terminés
             </div>
           </div>
-          <ElevateButton variant="secondary" size="sm" icon={<Icons.ArrowRight />}>Finish</ElevateButton>
+          <ElevateButton variant="secondary" size="sm" icon={<Icons.ArrowRight />}>Terminer</ElevateButton>
         </div>
       </div>
     </div>

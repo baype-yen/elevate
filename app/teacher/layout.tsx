@@ -10,12 +10,12 @@ import { useAppContext } from "@/hooks/use-app-context"
 import { createClient } from "@/lib/supabase/client"
 
 const navItems = [
-  { href: "/teacher", label: "Dashboard", icon: Icons.Home },
+  { href: "/teacher", label: "Tableau de bord", icon: Icons.Home },
   { href: "/teacher/classes", label: "Classes", icon: Icons.Book },
-  { href: "/teacher/students", label: "Students", icon: Icons.Users },
+  { href: "/teacher/students", label: "Élèves", icon: Icons.Users },
   { href: "/teacher/documents", label: "Documents", icon: Icons.FileText },
-  { href: "/teacher/work", label: "Student Work", icon: Icons.Clipboard },
-  { href: "/teacher/activity", label: "Activity", icon: Icons.Zap },
+  { href: "/teacher/work", label: "Travaux élèves", icon: Icons.Clipboard },
+  { href: "/teacher/activity", label: "Activité", icon: Icons.Zap },
 ]
 
 export default function TeacherLayout({ children }: { children: React.ReactNode }) {
@@ -38,7 +38,7 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
   if (loading || !context) {
     return (
       <div className="min-h-screen bg-off-white flex items-center justify-center">
-        <div className="font-sans text-sm text-text-mid">Loading workspace...</div>
+        <div className="font-sans text-sm text-text-mid">Chargement de l'espace...</div>
       </div>
     )
   }
@@ -61,11 +61,11 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
             </div>
             <div>
               <div className="font-sans text-base font-semibold text-white">{context.fullName}</div>
-              <div className="font-sans text-xs text-gray-mid">Teacher &middot; {context.schoolName || "No active school"}</div>
+              <div className="font-sans text-xs text-gray-mid">Enseignant &middot; {context.schoolName || "Aucun établissement actif"}</div>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <ElevateButton variant="secondary" size="sm" icon={<Icons.Plus />} onClick={() => router.push("/teacher/classes")}>New Class</ElevateButton>
+            <ElevateButton variant="secondary" size="sm" icon={<Icons.Plus />} onClick={() => router.push("/teacher/classes")}>Nouvelle classe</ElevateButton>
             <button onClick={onSignOut} className="w-9 h-9 rounded-[10px] bg-navy-mid flex items-center justify-center text-white/70 hover:text-white transition-colors cursor-pointer">
               <Icons.LogOut />
             </button>

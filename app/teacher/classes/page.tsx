@@ -66,7 +66,7 @@ export default function TeacherClassesPage() {
   const onCreateClass = async () => {
     if (!context) return
     if (!context.activeSchoolId) {
-      setError("No active school selected for class creation.")
+      setError("Aucun établissement actif sélectionné pour créer une classe.")
       return
     }
 
@@ -86,7 +86,7 @@ export default function TeacherClassesPage() {
       await loadClasses()
       router.push(`/teacher/classes/${classId}`)
     } catch (e: any) {
-      setError(e.message || "Failed to create class.")
+      setError(e.message || "Échec de la création de la classe.")
     } finally {
       setBusy(false)
     }
@@ -115,7 +115,7 @@ export default function TeacherClassesPage() {
       setEditingClassId(null)
       await loadClasses()
     } catch (e: any) {
-      setError(e.message || "Failed to update class.")
+      setError(e.message || "Échec de la mise à jour de la classe.")
     } finally {
       setBusy(false)
     }
@@ -132,14 +132,14 @@ export default function TeacherClassesPage() {
       }
       await loadClasses()
     } catch (e: any) {
-      setError(e.message || "Failed to update class archive status.")
+      setError(e.message || "Échec de la mise à jour du statut d'archivage.")
     } finally {
       setBusy(false)
     }
   }
 
   if (loading || !context) {
-    return <div className="font-sans text-sm text-text-mid">Loading classes...</div>
+    return <div className="font-sans text-sm text-text-mid">Chargement des classes...</div>
   }
 
   return (
@@ -147,16 +147,16 @@ export default function TeacherClassesPage() {
       <div className="bg-card rounded-2xl border border-gray-mid p-6">
         <div className="flex justify-between items-center mb-4 gap-3 flex-wrap">
           <div>
-            <h3 className="font-serif text-xl font-bold text-navy">Class Management</h3>
-            <p className="font-sans text-[13px] text-text-mid">Create, edit, archive classes, and manage each class roster.</p>
+            <h3 className="font-serif text-xl font-bold text-navy">Gestion des classes</h3>
+            <p className="font-sans text-[13px] text-text-mid">Créez, modifiez, archivez les classes et gérez chaque liste d'élèves.</p>
           </div>
           <BadgeChooser
             selected={filter}
             onSelect={setFilter}
             options={[
-              { value: "active", label: "Active" },
-              { value: "archived", label: "Archived" },
-              { value: "all", label: "All" },
+              { value: "active", label: "Actives" },
+              { value: "archived", label: "Archivées" },
+              { value: "all", label: "Toutes" },
             ]}
           />
         </div>
@@ -168,7 +168,7 @@ export default function TeacherClassesPage() {
                 <div>
                   <div className="font-serif text-[16px] font-bold text-navy">{classItem.name}</div>
                   <div className="font-sans text-xs text-text-light">
-                    {classItem.students} students &middot; Avg {classItem.avg}%
+                    {classItem.students} élèves &middot; Moy. {classItem.avg}%
                   </div>
                   <div className="font-sans text-[11px] text-text-light mt-0.5">
                     Code: {classItem.classCode || "—"}
@@ -179,22 +179,22 @@ export default function TeacherClassesPage() {
               </div>
 
               {classItem.archivedAt && (
-                <div className="font-sans text-[11px] text-watermelon font-semibold">Archived</div>
+                <div className="font-sans text-[11px] text-watermelon font-semibold">Archivée</div>
               )}
 
               <div className="flex gap-2 flex-wrap">
                 <ElevateButton size="sm" variant="primary" icon={<Icons.Eye />} onClick={() => router.push(`/teacher/classes/${classItem.id}`)}>
-                  Open
+                  Ouvrir
                 </ElevateButton>
                 <ElevateButton size="sm" variant="ghost" icon={<Icons.Edit />} onClick={() => beginEdit(classItem)}>
-                  Edit
+                  Modifier
                 </ElevateButton>
                 <ElevateButton
                   size="sm"
                   variant={classItem.archivedAt ? "secondary" : "outline"}
                   onClick={() => toggleArchive(classItem)}
                 >
-                  {classItem.archivedAt ? "Restore" : "Archive"}
+                  {classItem.archivedAt ? "Restaurer" : "Archiver"}
                 </ElevateButton>
               </div>
             </div>
@@ -202,7 +202,7 @@ export default function TeacherClassesPage() {
 
           {!visibleClasses.length && (
             <div className="rounded-xl border border-dashed border-gray-mid p-5 font-sans text-sm text-text-mid bg-off-white">
-              No classes in this view.
+              Aucune classe dans cette vue.
             </div>
           )}
         </div>
@@ -210,10 +210,10 @@ export default function TeacherClassesPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-card rounded-2xl border border-gray-mid p-6 flex flex-col gap-3">
-          <h4 className="font-serif text-lg font-bold text-navy">Create New Class</h4>
-          <InputField label="Class Name" placeholder="e.g. Year 10B — English A2" icon={<Icons.Book />} value={newClassName} onChange={setNewClassName} />
-          <InputField label="Class Code (optional)" placeholder="e.g. 10BA2" icon={<Icons.Settings />} value={newClassCode} onChange={setNewClassCode} />
-          <InputField label="Academic Year (optional)" placeholder="2026-2027" icon={<Icons.Calendar />} value={newClassYear} onChange={setNewClassYear} />
+          <h4 className="font-serif text-lg font-bold text-navy">Créer une classe</h4>
+          <InputField label="Nom de la classe" placeholder="ex. 10B - Anglais A2" icon={<Icons.Book />} value={newClassName} onChange={setNewClassName} />
+          <InputField label="Code classe (optionnel)" placeholder="ex. 10BA2" icon={<Icons.Settings />} value={newClassCode} onChange={setNewClassCode} />
+          <InputField label="Année scolaire (optionnel)" placeholder="2026-2027" icon={<Icons.Calendar />} value={newClassYear} onChange={setNewClassYear} />
           <RadioCardChooser
             columns={6}
             selected={newClassLevel}
@@ -227,16 +227,16 @@ export default function TeacherClassesPage() {
               { value: "c2", label: "C2" },
             ]}
           />
-          <ElevateButton variant="primary" icon={<Icons.Plus />} onClick={onCreateClass} disabled={busy}>Create Class</ElevateButton>
+          <ElevateButton variant="primary" icon={<Icons.Plus />} onClick={onCreateClass} disabled={busy}>Créer la classe</ElevateButton>
         </div>
 
         <div className="bg-card rounded-2xl border border-gray-mid p-6 flex flex-col gap-3">
-          <h4 className="font-serif text-lg font-bold text-navy">Edit Class</h4>
+          <h4 className="font-serif text-lg font-bold text-navy">Modifier la classe</h4>
           {editingClassId ? (
             <>
-              <InputField label="Class Name" icon={<Icons.Book />} value={editingName} onChange={setEditingName} />
-              <InputField label="Class Code" icon={<Icons.Settings />} value={editingCode} onChange={setEditingCode} />
-              <InputField label="Academic Year" icon={<Icons.Calendar />} value={editingYear} onChange={setEditingYear} />
+              <InputField label="Nom de la classe" icon={<Icons.Book />} value={editingName} onChange={setEditingName} />
+              <InputField label="Code classe" icon={<Icons.Settings />} value={editingCode} onChange={setEditingCode} />
+              <InputField label="Année scolaire" icon={<Icons.Calendar />} value={editingYear} onChange={setEditingYear} />
               <RadioCardChooser
                 columns={6}
                 selected={editingLevel}
@@ -251,12 +251,12 @@ export default function TeacherClassesPage() {
                 ]}
               />
               <div className="flex gap-2">
-                <ElevateButton variant="primary" icon={<Icons.Check />} onClick={saveEdit} disabled={busy}>Save</ElevateButton>
-                <ElevateButton variant="ghost" onClick={() => setEditingClassId(null)} disabled={busy}>Cancel</ElevateButton>
+                <ElevateButton variant="primary" icon={<Icons.Check />} onClick={saveEdit} disabled={busy}>Enregistrer</ElevateButton>
+                <ElevateButton variant="ghost" onClick={() => setEditingClassId(null)} disabled={busy}>Annuler</ElevateButton>
               </div>
             </>
           ) : (
-            <div className="font-sans text-sm text-text-mid">Select a class card and click Edit to update class details.</div>
+            <div className="font-sans text-sm text-text-mid">Sélectionnez une carte classe puis cliquez sur Modifier pour mettre à jour les détails.</div>
           )}
         </div>
       </div>

@@ -8,6 +8,67 @@ function normalizeLevel(level: string) {
   return level.toLowerCase()
 }
 
+function toFileType(mimeType: string | null | undefined) {
+  return (mimeType || "FILE").split("/").pop()?.toUpperCase() || "FILE"
+}
+
+function toFileSize(sizeBytes: number | null | undefined) {
+  const value = sizeBytes || 0
+  return value > 1024 * 1024 ? `${(value / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(1, Math.round(value / 1024))} KB`
+}
+
+export type SubmissionDocumentPayload = {
+  id: string
+  name: string
+  filePath: string
+  mimeType?: string | null
+  sizeBytes?: number | null
+}
+
+export type SubmissionPayload = {
+  text: string
+  document: SubmissionDocumentPayload | null
+}
+
+function parseSubmissionPayload(content: any): SubmissionPayload {
+  const payload = content && typeof content === "object" ? content : {}
+  const text = typeof payload.text === "string" ? payload.text : ""
+  const rawDocument = payload.document && typeof payload.document === "object" ? payload.document : null
+
+  const document = rawDocument
+    ? {
+        id: String(rawDocument.id || ""),
+        name: String(rawDocument.name || ""),
+        filePath: String(rawDocument.filePath || ""),
+        mimeType: rawDocument.mimeType ? String(rawDocument.mimeType) : null,
+        sizeBytes: typeof rawDocument.sizeBytes === "number" ? rawDocument.sizeBytes : null,
+      }
+    : null
+
+  if (document && (!document.id || !document.name || !document.filePath)) {
+    return { text, document: null }
+  }
+
+  return { text, document }
+}
+
+function normalizeAssignmentType(type: string | null | undefined) {
+  const value = (type || "exercise").toLowerCase()
+  const allowed = new Set([
+    "quiz",
+    "grammar",
+    "reading",
+    "writing",
+    "listening",
+    "speaking",
+    "vocabulary",
+    "exercise",
+    "project",
+    "mixed",
+  ])
+  return allowed.has(value) ? value : "exercise"
+}
+
 export type TeacherClassSummary = {
   id: string
   name: string
@@ -201,7 +262,7 @@ export async function createTeacherClass(
 ) {
   const trimmedName = input.name.trim()
   if (!trimmedName) {
-    throw new Error("Class name is required.")
+    throw new Error("Le nom de la classe est obligatoire.")
   }
 
   const desiredCode = input.classCode?.trim().toUpperCase()
@@ -236,7 +297,7 @@ export async function updateTeacherClass(
 ) {
   const trimmedName = input.name.trim()
   if (!trimmedName) {
-    throw new Error("Class name is required.")
+    throw new Error("Le nom de la classe est obligatoire.")
   }
 
   const { error } = await supabase
@@ -312,7 +373,7 @@ export async function addClassRosterStudent(
   const lastName = input.lastName.trim()
 
   if (!firstName || !lastName) {
-    throw new Error("First name and last name are required.")
+    throw new Error("Le prénom et le nom sont obligatoires.")
   }
 
   const { data: latest } = await supabase
@@ -348,7 +409,7 @@ export async function updateClassRosterStudent(
   const lastName = input.lastName.trim()
 
   if (!firstName || !lastName) {
-    throw new Error("First name and last name are required.")
+    throw new Error("Le prénom et le nom sont obligatoires.")
   }
 
   const { error } = await supabase
@@ -436,7 +497,7 @@ export async function fetchTeacherStudentsData(
   const { data: classes } = await classQuery
 
   const classIds = (classes || []).map((c) => c.id)
-  if (!classIds.length) return { className: "No class", students: [] as any[], classes: [] as any[] }
+  if (!classIds.length) return { className: "Aucune classe", students: [] as any[], classes: [] as any[] }
 
   const { data: rosterStudents } = await supabase
     .from("class_students")
@@ -479,16 +540,16 @@ export async function fetchTeacherStudentsData(
       initials: `${r.first_name[0] || ""}${r.last_name[0] || ""}`.toUpperCase(),
       level: classLevelMap.get(r.class_id) || "B1",
       score: 0,
-      lastActive: r.city || "Roster record",
+      lastActive: r.city || "Fiche de liste",
     }
   })
 
   const enrolledList = (enrollments || []).map((e) => {
-    const name = (e.profiles as any)?.full_name || "Student"
+    const name = (e.profiles as any)?.full_name || "Élève"
     const scores = studentScoreMap.get(e.student_id) || []
     const score = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0
     const lastDate = studentLastMap.get(e.student_id)
-    const lastActive = lastDate ? new Date(lastDate).toLocaleDateString() : "No activity"
+    const lastActive = lastDate ? new Date(lastDate).toLocaleDateString("fr-FR") : "Aucune activité"
     return {
       name,
       initials: name.split(" ").map((p: string) => p[0]).join("").slice(0, 2).toUpperCase(),
@@ -508,7 +569,7 @@ export async function fetchTeacherStudentsData(
   }
 
   return {
-    className: classId ? classes?.[0]?.name || "Class" : "All Active Classes",
+    className: classId ? classes?.[0]?.name || "Classe" : "Toutes les classes actives",
     students: Array.from(unique.values()),
     classes: (classes || []).map((c) => ({ id: c.id, name: c.name })),
   }
@@ -534,9 +595,11 @@ export async function fetchTeacherWorkData(
   const classIds = (classes || []).map((c) => c.id)
   if (!classIds.length) return { items: [] as any[], classes: [] as any[] }
 
+  const classNameById = new Map((classes || []).map((c) => [c.id, c.name]))
+
   const { data: assignments } = await supabase
     .from("assignments")
-    .select("id, title, type, cefr_level, class_id, due_at")
+    .select("id, title, type, cefr_level, class_id, school_id, due_at")
     .in("class_id", classIds)
     .order("created_at", { ascending: false })
 
@@ -550,7 +613,7 @@ export async function fetchTeacherWorkData(
 
   const { data: submissions } = await supabase
     .from("submissions")
-    .select("assignment_id, student_id, status, score, submitted_at, profiles(full_name)")
+    .select("id, assignment_id, student_id, status, score, content, feedback, submitted_at, graded_at, profiles(full_name)")
     .in("assignment_id", assignmentIds)
     .order("submitted_at", { ascending: false })
 
@@ -559,12 +622,28 @@ export async function fetchTeacherWorkData(
 
   const items = (submissions || []).map((s) => {
     const a = byAssignment.get(s.assignment_id)
+    const payload = parseSubmissionPayload(s.content)
+    const contentPreview = payload.text.trim() ? payload.text.trim().slice(0, 220) : ""
+
     return {
-      title: a?.title || "Assignment",
-      student: (s.profiles as any)?.full_name || "Student",
-      submitted: s.submitted_at ? new Date(s.submitted_at).toLocaleDateString() : "-",
+      id: s.id,
+      assignmentId: s.assignment_id,
+      classId: a?.class_id || null,
+      schoolId: a?.school_id || schoolId,
+      studentId: s.student_id,
+      title: a?.title || "Devoir",
+      student: (s.profiles as any)?.full_name || "Élève",
+      className: classNameById.get(a?.class_id) || "Classe",
+      submitted: s.submitted_at ? new Date(s.submitted_at).toLocaleDateString("fr-FR") : "-",
+      submittedAtRaw: s.submitted_at || null,
       status: s.status === "graded" ? "Graded" : "Pending",
+      statusRaw: s.status,
       score: s.score,
+      feedback: s.feedback || "",
+      gradedAt: s.graded_at || null,
+      contentText: payload.text,
+      contentPreview,
+      document: payload.document,
       type: a?.type || "mixed",
       level: upLevel(a?.cefr_level),
     }
@@ -577,24 +656,171 @@ export async function fetchTeacherWorkData(
 }
 
 export async function fetchTeacherDocumentsData(supabase: SupabaseClient, userId: string, schoolId: string | null) {
-  const { data } = schoolId
+  const { data: classes } = schoolId
+    ? await supabase
+        .from("classes")
+        .select("id, name")
+        .eq("teacher_id", userId)
+        .eq("school_id", schoolId)
+        .is("archived_at", null)
+        .order("name", { ascending: true })
+    : { data: [] as any[] }
+
+  const { data: docs } = schoolId
     ? await supabase
         .from("documents")
-        .select("id, name, mime_type, size_bytes, created_at")
+        .select("id, name, file_path, mime_type, size_bytes, created_at")
+        .eq("owner_id", userId)
         .eq("school_id", schoolId)
         .order("created_at", { ascending: false })
     : await supabase
         .from("documents")
-        .select("id, name, mime_type, size_bytes, created_at")
+        .select("id, name, file_path, mime_type, size_bytes, created_at")
         .eq("owner_id", userId)
         .is("school_id", null)
         .order("created_at", { ascending: false })
 
-  return (data || []).map((d) => ({
+  const documentIds = (docs || []).map((d) => d.id)
+  const { data: shares } = schoolId && documentIds.length
+    ? await supabase
+        .from("document_shares")
+        .select("document_id, class_id")
+        .eq("school_id", schoolId)
+        .in("document_id", documentIds)
+    : { data: [] as any[] }
+
+  const classNameById = new Map((classes || []).map((c) => [c.id, c.name]))
+  const sharedByDocument = new Map<string, Array<{ id: string; name: string }>>()
+
+  for (const share of shares || []) {
+    const className = classNameById.get(share.class_id)
+    if (!className) continue
+    const arr = sharedByDocument.get(share.document_id) || []
+    arr.push({ id: share.class_id, name: className })
+    sharedByDocument.set(share.document_id, arr)
+  }
+
+  return {
+    classes: (classes || []).map((c) => ({ id: c.id, name: c.name })),
+    documents: (docs || []).map((d) => {
+      const shared = sharedByDocument.get(d.id) || []
+      return {
+        id: d.id,
+        name: d.name,
+        filePath: d.file_path,
+        type: toFileType(d.mime_type),
+        size: toFileSize(d.size_bytes),
+        date: new Date(d.created_at).toLocaleDateString("fr-FR"),
+        sharedClassIds: shared.map((s) => s.id),
+        sharedClassNames: shared.map((s) => s.name),
+      }
+    }),
+  }
+}
+
+export async function fetchStudentDocumentsData(supabase: SupabaseClient, userId: string, schoolId: string | null) {
+  const { data: enrollments } = await supabase
+    .from("class_enrollments")
+    .select("class_id")
+    .eq("student_id", userId)
+    .eq("status", "active")
+
+  const enrolledClassIds = (enrollments || []).map((e) => e.class_id)
+  if (!enrolledClassIds.length) return [] as any[]
+
+  let classQuery = supabase
+    .from("classes")
+    .select("id, name")
+    .in("id", enrolledClassIds)
+    .is("archived_at", null)
+
+  classQuery = schoolId ? classQuery.eq("school_id", schoolId) : classQuery.is("school_id", null)
+  const { data: classes } = await classQuery
+
+  const classIds = (classes || []).map((c) => c.id)
+  if (!classIds.length) return [] as any[]
+
+  let classShareQuery = supabase
+    .from("document_shares")
+    .select("document_id, class_id, assignment_id, created_at")
+    .in("class_id", classIds)
+
+  classShareQuery = schoolId ? classShareQuery.eq("school_id", schoolId) : classShareQuery
+  const { data: classShares } = await classShareQuery
+
+  let assignmentQuery = supabase
+    .from("assignments")
+    .select("id, title, class_id")
+    .in("class_id", classIds)
+
+  assignmentQuery = schoolId ? assignmentQuery.eq("school_id", schoolId) : assignmentQuery
+  const { data: assignments } = await assignmentQuery
+
+  const assignmentIds = (assignments || []).map((a) => a.id)
+  const { data: assignmentShares } = assignmentIds.length
+    ? await (schoolId
+        ? supabase
+            .from("document_shares")
+            .select("document_id, class_id, assignment_id, created_at")
+            .in("assignment_id", assignmentIds)
+            .eq("school_id", schoolId)
+        : supabase
+            .from("document_shares")
+            .select("document_id, class_id, assignment_id, created_at")
+            .in("assignment_id", assignmentIds))
+    : { data: [] as any[] }
+
+  const shares = [...(classShares || []), ...(assignmentShares || [])]
+  const documentIds = Array.from(new Set(shares.map((s) => s.document_id)))
+  if (!documentIds.length) return [] as any[]
+
+  const { data: docs } = await supabase
+    .from("documents")
+    .select("id, name, file_path, mime_type, size_bytes, created_at")
+    .in("id", documentIds)
+    .order("created_at", { ascending: false })
+
+  const classNameById = new Map((classes || []).map((c) => [c.id, c.name]))
+  const assignmentTitleById = new Map((assignments || []).map((a) => [a.id, a.title]))
+  const classNamesByDocument = new Map<string, string[]>()
+  const assignmentTitlesByDocument = new Map<string, string[]>()
+  const lastSharedAtByDocument = new Map<string, string>()
+
+  for (const share of shares) {
+    const className = classNameById.get(share.class_id)
+    if (className) {
+      const names = classNamesByDocument.get(share.document_id) || []
+      if (!names.includes(className)) names.push(className)
+      classNamesByDocument.set(share.document_id, names)
+    }
+
+    const previous = lastSharedAtByDocument.get(share.document_id)
+    if (!previous || new Date(share.created_at) > new Date(previous)) {
+      lastSharedAtByDocument.set(share.document_id, share.created_at)
+    }
+
+    if (share.assignment_id) {
+      const assignmentTitle = assignmentTitleById.get(share.assignment_id)
+      if (assignmentTitle) {
+        const titles = assignmentTitlesByDocument.get(share.document_id) || []
+        if (!titles.includes(assignmentTitle)) titles.push(assignmentTitle)
+        assignmentTitlesByDocument.set(share.document_id, titles)
+      }
+    }
+  }
+
+  return (docs || []).map((d) => ({
+    id: d.id,
     name: d.name,
-    type: (d.mime_type || "FILE").split("/").pop()?.toUpperCase() || "FILE",
-    size: d.size_bytes > 1024 * 1024 ? `${(d.size_bytes / (1024 * 1024)).toFixed(1)} MB` : `${Math.round(d.size_bytes / 1024)} KB`,
-    date: new Date(d.created_at).toLocaleDateString(),
+    filePath: d.file_path,
+    type: toFileType(d.mime_type),
+    size: toFileSize(d.size_bytes),
+    date: new Date(d.created_at).toLocaleDateString("fr-FR"),
+    sharedAt: lastSharedAtByDocument.get(d.id)
+      ? new Date(lastSharedAtByDocument.get(d.id) as string).toLocaleDateString("fr-FR")
+      : new Date(d.created_at).toLocaleDateString("fr-FR"),
+    sharedClassNames: classNamesByDocument.get(d.id) || [],
+    sharedAssignmentTitles: assignmentTitlesByDocument.get(d.id) || [],
   }))
 }
 
@@ -608,8 +834,8 @@ export async function fetchTeacherActivityData(supabase: SupabaseClient, userId:
   const { data } = schoolId ? await query.eq("school_id", schoolId) : await query.eq("actor_id", userId).is("school_id", null)
 
   return (data || []).map((e) => ({
-    text: (e.payload as any)?.text || `${(e.profiles as any)?.full_name || "Someone"} ${e.event_type.replaceAll("_", " ")}`,
-    time: new Date(e.created_at).toLocaleString(),
+    text: (e.payload as any)?.text || `${(e.profiles as any)?.full_name || "Quelqu'un"} ${e.event_type.replaceAll("_", " ")}`,
+    time: new Date(e.created_at).toLocaleString("fr-FR"),
     type: e.event_type,
   }))
 }
@@ -632,6 +858,22 @@ export async function fetchStudentDashboardData(supabase: SupabaseClient, userId
         .order("due_at", { ascending: true })
         .limit(8)
     : { data: [] as any[] }
+
+  const upcomingIds = (upcoming || []).map((u) => u.id)
+  const { data: upcomingShares } = upcomingIds.length
+    ? await (schoolId
+        ? supabase
+            .from("document_shares")
+            .select("assignment_id")
+            .in("assignment_id", upcomingIds)
+            .eq("school_id", schoolId)
+        : supabase
+            .from("document_shares")
+            .select("assignment_id")
+            .in("assignment_id", upcomingIds))
+    : { data: [] as any[] }
+
+  const assignmentIdsWithDocuments = new Set((upcomingShares || []).map((share) => share.assignment_id))
 
   const { data: history } = await supabase
     .from("score_history")
@@ -671,13 +913,15 @@ export async function fetchStudentDashboardData(supabase: SupabaseClient, userId
     badgeCount: (badges || []).length,
     lessonsDone: 0,
     upcomingWork: (upcoming || []).map((u) => ({
+      id: u.id,
       title: u.title,
-      due: u.due_at ? new Date(u.due_at).toLocaleDateString() : "No due date",
-      type: (u.type || "exercise").toString(),
+      due: u.due_at ? new Date(u.due_at).toLocaleDateString("fr-FR") : "Pas de date limite",
+      type: (u.type || "exercice").toString(),
       urgent: !!u.due_at && new Date(u.due_at).getTime() - Date.now() < 1000 * 60 * 60 * 24 * 2,
+      hasDocuments: assignmentIdsWithDocuments.has(u.id),
     })),
     skills: Array.from(uniqueSkills.values()).slice(0, 5).map((r) => ({
-      label: (r.skills as any)?.label || "Skill",
+      label: (r.skills as any)?.label || "Compétence",
       score: Math.round(r.score || 0),
     })),
   }
@@ -697,7 +941,7 @@ export async function fetchStudentProgressData(supabase: SupabaseClient, userId:
     if (seenSkills.has(key)) continue
     seenSkills.add(key)
     skills.push({
-      skill: (row.skills as any)?.label || "Skill",
+      skill: (row.skills as any)?.label || "Compétence",
       score: Math.round(row.score || 0),
       trend: row.trend || 0,
     })
@@ -727,20 +971,20 @@ export async function fetchStudentProgressData(supabase: SupabaseClient, userId:
   return {
     skills,
     scoreEvolution: (history || []).map((h) => ({
-      month: new Date(h.month_date).toLocaleDateString(undefined, { month: "short" }),
+      month: new Date(h.month_date).toLocaleDateString("fr-FR", { month: "short" }),
       score: Math.round(h.overall_score),
     })),
     recentGrades: (grades || []).map((g) => ({
-      title: (g.assignments as any)?.title || "Assignment",
-      type: (g.assignments as any)?.type || "exercise",
-      date: g.graded_at ? new Date(g.graded_at).toLocaleDateString() : "-",
+      title: (g.assignments as any)?.title || "Devoir",
+      type: (g.assignments as any)?.type || "exercice",
+      date: g.graded_at ? new Date(g.graded_at).toLocaleDateString("fr-FR") : "-",
       score: Math.round(g.score || 0),
       max: Math.round((g.assignments as any)?.max_score || 100),
     })),
     feedback: feedback?.[0]
       ? {
-          teacher: (feedback[0].profiles as any)?.full_name || "Teacher",
-          date: new Date(feedback[0].created_at).toLocaleDateString(),
+          teacher: (feedback[0].profiles as any)?.full_name || "Enseignant",
+          date: new Date(feedback[0].created_at).toLocaleDateString("fr-FR"),
           text: feedback[0].feedback,
         }
       : null,
@@ -771,22 +1015,209 @@ export async function fetchStudentCalendarData(
   return map
 }
 
-export async function fetchStudentExercisesData(supabase: SupabaseClient, userId: string) {
+export async function fetchStudentExercisesData(supabase: SupabaseClient, userId: string, schoolId?: string | null) {
   const { data: enrollments } = await supabase
     .from("class_enrollments")
     .select("class_id")
     .eq("student_id", userId)
     .eq("status", "active")
-    .limit(1)
 
-  const classId = enrollments?.[0]?.class_id || null
-  if (!classId) return [] as any[]
+  const classIds = Array.from(new Set((enrollments || []).map((e) => e.class_id)))
+  if (!classIds.length) {
+    return {
+      assignments: [] as any[],
+      personalizedExercises: [] as any[],
+      classes: [] as any[],
+    }
+  }
 
-  const { data } = await supabase
+  let classQuery = supabase
+    .from("classes")
+    .select("id, name")
+    .in("id", classIds)
+    .is("archived_at", null)
+
+  classQuery = schoolId ? classQuery.eq("school_id", schoolId) : classQuery
+  const { data: classes } = await classQuery
+
+  const activeClassIds = (classes || []).map((c) => c.id)
+  if (!activeClassIds.length) {
+    return {
+      assignments: [] as any[],
+      personalizedExercises: [] as any[],
+      classes: [] as any[],
+    }
+  }
+
+  const { data: assignments } = await supabase
     .from("assignments")
-    .select("id, title, type, cefr_level, due_at")
-    .eq("class_id", classId)
-    .order("due_at", { ascending: true })
+    .select("id, school_id, class_id, title, description, type, cefr_level, due_at, created_at")
+    .in("class_id", activeClassIds)
+    .eq("is_published", true)
+    .order("due_at", { ascending: true, nullsFirst: false })
 
-  return data || []
+  const assignmentIds = (assignments || []).map((a) => a.id)
+  const { data: submissions } = assignmentIds.length
+    ? await supabase
+        .from("submissions")
+        .select("id, assignment_id, status, content, score, feedback, submitted_at, graded_at")
+        .eq("student_id", userId)
+        .in("assignment_id", assignmentIds)
+    : { data: [] as any[] }
+
+  const { data: assignmentShares } = assignmentIds.length
+    ? await (schoolId
+        ? supabase
+            .from("document_shares")
+            .select("assignment_id, document_id")
+            .in("assignment_id", assignmentIds)
+            .eq("school_id", schoolId)
+        : supabase
+            .from("document_shares")
+            .select("assignment_id, document_id")
+            .in("assignment_id", assignmentIds))
+    : { data: [] as any[] }
+
+  const assignmentDocumentIds = Array.from(new Set((assignmentShares || []).map((share) => share.document_id)))
+  const { data: assignmentDocs } = assignmentDocumentIds.length
+    ? await supabase
+        .from("documents")
+        .select("id, name, file_path, mime_type, size_bytes")
+        .in("id", assignmentDocumentIds)
+    : { data: [] as any[] }
+
+  let personalizedQuery = supabase
+    .from("personalized_exercises")
+    .select("id, title, instructions, exercise_type, cefr_level, is_completed, due_at, created_at")
+    .eq("student_id", userId)
+    .order("created_at", { ascending: false })
+
+  personalizedQuery = schoolId ? personalizedQuery.eq("school_id", schoolId) : personalizedQuery
+  const { data: personalized } = await personalizedQuery
+
+  const classNameById = new Map((classes || []).map((c) => [c.id, c.name]))
+  const submissionByAssignment = new Map<string, any>()
+  for (const submission of submissions || []) submissionByAssignment.set(submission.assignment_id, submission)
+
+  const documentById = new Map((assignmentDocs || []).map((doc) => [doc.id, doc]))
+  const documentsByAssignment = new Map<string, Array<{ id: string; name: string; filePath: string; mimeType: string | null; sizeBytes: number | null }>>()
+
+  for (const share of assignmentShares || []) {
+    const doc = documentById.get(share.document_id)
+    if (!doc) continue
+    const rows = documentsByAssignment.get(share.assignment_id) || []
+    if (!rows.some((row) => row.id === doc.id)) {
+      rows.push({
+        id: doc.id,
+        name: doc.name,
+        filePath: doc.file_path,
+        mimeType: doc.mime_type || null,
+        sizeBytes: typeof doc.size_bytes === "number" ? doc.size_bytes : null,
+      })
+    }
+    documentsByAssignment.set(share.assignment_id, rows)
+  }
+
+  return {
+    classes: (classes || []).map((c) => ({ id: c.id, name: c.name })),
+    assignments: (assignments || []).map((assignment) => {
+      const submission = submissionByAssignment.get(assignment.id)
+      const payload = parseSubmissionPayload(submission?.content)
+
+      return {
+        id: assignment.id,
+        schoolId: assignment.school_id,
+        classId: assignment.class_id,
+        className: classNameById.get(assignment.class_id) || "Classe",
+        title: assignment.title,
+        description: assignment.description || "",
+        type: normalizeAssignmentType(assignment.type),
+        cefrLevel: upLevel(assignment.cefr_level),
+        dueAt: assignment.due_at,
+        createdAt: assignment.created_at,
+        documents: documentsByAssignment.get(assignment.id) || [],
+        submission: submission
+          ? {
+              id: submission.id,
+              status: submission.status,
+              score: submission.score,
+              feedback: submission.feedback || "",
+              submittedAt: submission.submitted_at,
+              gradedAt: submission.graded_at,
+              content: payload,
+            }
+          : null,
+      }
+    }),
+    personalizedExercises: (personalized || []).map((exercise) => ({
+      id: exercise.id,
+      title: exercise.title,
+      instructions: exercise.instructions,
+      type: normalizeAssignmentType(exercise.exercise_type),
+      level: upLevel(exercise.cefr_level),
+      isCompleted: !!exercise.is_completed,
+      dueAt: exercise.due_at,
+      createdAt: exercise.created_at,
+    })),
+  }
+}
+
+export function generatePersonalizedExercises(params: {
+  assignmentTitle: string
+  score: number
+  feedback: string
+  cefrLevel: string
+}) {
+  const level = normalizeLevel(params.cefrLevel)
+  const score = Math.max(0, Math.min(100, Math.round(params.score)))
+  const feedback = (params.feedback || "").trim()
+
+  if (score < 60) {
+    return [
+      {
+        title: `Réécriture guidée - ${params.assignmentTitle}`,
+        instructions: `Réécris l'e-mail avec cette structure: objet clair, formule d'ouverture, 3 idées principales, formule de clôture. ${feedback ? `Point d'attention: ${feedback}` : ""}`,
+        exerciseType: "writing",
+        cefrLevel: level,
+      },
+      {
+        title: "Formules professionnelles",
+        instructions: "Transforme 10 phrases informelles en formulations professionnelles adaptées à un e-mail professionnel.",
+        exerciseType: "vocabulary",
+        cefrLevel: level,
+      },
+      {
+        title: "Correction grammaire ciblée",
+        instructions: "Corrige les erreurs de grammaire et de ponctuation dans un mini e-mail (temps verbaux, accords, majuscules, ponctuation).",
+        exerciseType: "grammar",
+        cefrLevel: level,
+      },
+    ]
+  }
+
+  if (score < 80) {
+    return [
+      {
+        title: `Amélioration de style - ${params.assignmentTitle}`,
+        instructions: `Améliore ton e-mail pour le rendre plus précis et plus professionnel (cohérence, transitions, ton). ${feedback ? `Retour enseignant: ${feedback}` : ""}`,
+        exerciseType: "writing",
+        cefrLevel: level,
+      },
+      {
+        title: "Object line & call-to-action",
+        instructions: "Rédige 5 objets d'e-mail efficaces puis ajoute une phrase de call-to-action claire dans chaque e-mail.",
+        exerciseType: "exercise",
+        cefrLevel: level,
+      },
+    ]
+  }
+
+  return [
+    {
+      title: `Version avancée - ${params.assignmentTitle}`,
+      instructions: "Rédige une version plus concise et plus persuasive de ton e-mail, avec un registre professionnel constant.",
+      exerciseType: "writing",
+      cefrLevel: level,
+    },
+  ]
 }
