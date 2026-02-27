@@ -103,7 +103,8 @@ This repository includes Supabase migrations in `supabase/migrations` and seed d
 
 ## Auth / First Login
 
-- Login page is at `/login`.
+- Teacher/admin login page is at `/login`.
+- Student login page is at `/student-login`.
 - Create users in Supabase Auth (email/password) before logging in.
 - Teacher dashboards require the user profile role to be `teacher`.
 - Student dashboards require `student` (default for new users unless metadata/SQL changes it).

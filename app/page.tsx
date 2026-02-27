@@ -58,7 +58,7 @@ export default function HomePage() {
               <Link href="/login">
                 <ElevateButton variant="ghost" size="sm" className="text-white hover:bg-navy-mid border-transparent">Connexion</ElevateButton>
               </Link>
-              <Link href="/login">
+              <Link href="/student-login">
                 <ElevateButton variant="secondary" size="sm">Accès élève</ElevateButton>
               </Link>
             </div>
@@ -76,7 +76,7 @@ export default function HomePage() {
               De A1 à C2 — des leçons personnalisées, des exercices adaptatifs et un suivi en temps réel pour les élèves et les enseignants.
             </p>
             <div className="flex gap-3 flex-wrap">
-              <Link href="/login">
+              <Link href="/student-login">
                 <ElevateButton variant="secondary" size="lg" iconRight icon={<Icons.ArrowRight />}>Accéder à votre compte</ElevateButton>
               </Link>
               <Link href="/teacher">
@@ -140,7 +140,7 @@ export default function HomePage() {
           Rejoignez des milliers d'élèves et d'enseignants qui utilisent déjà Elevate pour progresser en langues.
         </p>
         <div className="flex gap-3 justify-center flex-wrap">
-          <Link href="/login">
+          <Link href="/student-login">
             <ElevateButton variant="primary" size="lg" iconRight icon={<Icons.ArrowRight />}>Aller à la connexion</ElevateButton>
           </Link>
           <Link href="/student">

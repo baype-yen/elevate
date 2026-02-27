@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 
 export type AppContext = {
@@ -18,6 +18,7 @@ export function useAppContext() {
   const [context, setContext] = useState<AppContext | null>(null)
   const [loading, setLoading] = useState(true)
   const router = useRouter()
+  const pathname = usePathname()
 
   useEffect(() => {
     let mounted = true
@@ -92,7 +93,8 @@ export function useAppContext() {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!session) {
-        router.replace("/login")
+        const loginPath = pathname.startsWith("/student") ? "/student-login" : "/login"
+        router.replace(loginPath)
       }
     })
 
@@ -100,7 +102,7 @@ export function useAppContext() {
       mounted = false
       subscription.unsubscribe()
     }
-  }, [router])
+  }, [pathname, router])
 
   return { context, loading }
 }

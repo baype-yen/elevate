@@ -31,7 +31,7 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
   const onSignOut = async () => {
     const supabase = createClient()
     await supabase.auth.signOut()
-    router.push("/login")
+    router.push("/student-login")
   }
 
   if (loading || !context) {

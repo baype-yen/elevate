@@ -13,6 +13,32 @@ function badRequest(message: string) {
   return NextResponse.json({ error: message }, { status: 400 })
 }
 
+async function findAuthUserByEmail(
+  admin: ReturnType<typeof createAdminClient>,
+  email: string,
+) {
+  const target = email.toLowerCase()
+  const perPage = 200
+
+  for (let page = 1; page <= 25; page += 1) {
+    const { data, error } = await admin.auth.admin.listUsers({ page, perPage })
+    if (error) {
+      return { user: null, error }
+    }
+
+    const match = (data?.users || []).find((candidate) => (candidate.email || "").toLowerCase() === target)
+    if (match) {
+      return { user: match, error: null }
+    }
+
+    if (!data?.users?.length || data.users.length < perPage) {
+      break
+    }
+  }
+
+  return { user: null, error: null }
+}
+
 export async function POST(request: Request) {
   let payload: EnrollStudentPayload
 
@@ -75,6 +101,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: message }, { status: 500 })
   }
 
+  let studentId = ""
+  let accountMode: "created" | "updated" = "created"
+
   const { data: createdUserData, error: createUserError } = await admin.auth.admin.createUser({
     email,
     password,
@@ -85,21 +114,63 @@ export async function POST(request: Request) {
     },
   })
 
-  if (createUserError || !createdUserData.user) {
+  if (!createUserError && createdUserData.user) {
+    studentId = createdUserData.user.id
+    accountMode = "created"
+  } else {
     const lowered = createUserError?.message?.toLowerCase() || ""
-    const message =
-      lowered.includes("already") || lowered.includes("exists")
-        ? "Un compte avec cet e-mail existe déjà."
-        : createUserError?.message || "Impossible de créer le compte élève."
+    const isAlreadyExists = lowered.includes("already") || lowered.includes("exists") || lowered.includes("registered")
 
-    return NextResponse.json({ error: message }, { status: 400 })
+    if (!isAlreadyExists) {
+      return NextResponse.json({ error: createUserError?.message || "Impossible de créer le compte élève." }, { status: 400 })
+    }
+
+    const { user: existingAuthUser, error: existingUserError } = await findAuthUserByEmail(admin, email)
+
+    if (existingUserError || !existingAuthUser) {
+      return NextResponse.json(
+        { error: "Un compte avec cet e-mail existe déjà, mais nous n'avons pas pu le mettre à jour." },
+        { status: 400 },
+      )
+    }
+
+    studentId = existingAuthUser.id
+    accountMode = "updated"
+
+    const { error: updateUserError } = await admin.auth.admin.updateUserById(studentId, {
+      password,
+      email_confirm: true,
+      user_metadata: {
+        full_name: fullName,
+        role: "student",
+      },
+    })
+
+    if (updateUserError) {
+      return NextResponse.json(
+        { error: "Compte existant détecté, mais la mise à jour du mot de passe a échoué." },
+        { status: 400 },
+      )
+    }
   }
 
-  const studentId = createdUserData.user.id
   const nowIso = new Date().toISOString()
 
-  const rollbackUser = async () => {
-    await admin.auth.admin.deleteUser(studentId)
+  const rollbackCreatedUser = async () => {
+    if (accountMode === "created" && studentId) {
+      await admin.auth.admin.deleteUser(studentId)
+    }
+  }
+
+  const { data: existingProfile } = await admin
+    .from("profiles")
+    .select("default_role")
+    .eq("id", studentId)
+    .maybeSingle()
+
+  if (existingProfile?.default_role === "teacher") {
+    await rollbackCreatedUser()
+    return NextResponse.json({ error: "Cet e-mail est déjà utilisé par un compte enseignant." }, { status: 400 })
   }
 
   const { error: profileError } = await admin
@@ -115,7 +186,7 @@ export async function POST(request: Request) {
     )
 
   if (profileError) {
-    await rollbackUser()
+    await rollbackCreatedUser()
     return NextResponse.json({ error: "La configuration du profil élève a échoué." }, { status: 500 })
   }
 
@@ -135,7 +206,7 @@ export async function POST(request: Request) {
     )
 
   if (membershipError) {
-    await rollbackUser()
+    await rollbackCreatedUser()
     return NextResponse.json({ error: "La configuration de l'adhésion élève a échoué." }, { status: 500 })
   }
 
@@ -152,7 +223,7 @@ export async function POST(request: Request) {
     )
 
   if (enrollmentError) {
-    await rollbackUser()
+    await rollbackCreatedUser()
     return NextResponse.json({ error: "L'inscription de l'élève a échoué." }, { status: 500 })
   }
 
@@ -171,5 +242,6 @@ export async function POST(request: Request) {
     studentId,
     email,
     className: classRow.name,
+    accountMode,
   })
 }

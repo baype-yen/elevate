@@ -1,12 +1,20 @@
 import { createServerClient } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"
 
+function isTeacherPath(pathname: string) {
+  return pathname === "/teacher" || pathname.startsWith("/teacher/")
+}
+
+function isStudentPath(pathname: string) {
+  return pathname === "/student" || pathname.startsWith("/student/")
+}
+
 function isProtectedPath(pathname: string) {
-  return pathname.startsWith("/teacher") || pathname.startsWith("/student")
+  return isTeacherPath(pathname) || isStudentPath(pathname)
 }
 
 function isAuthPath(pathname: string) {
-  return pathname === "/login"
+  return pathname === "/login" || pathname === "/student-login"
 }
 
 export async function middleware(request: NextRequest) {
@@ -37,7 +45,7 @@ export async function middleware(request: NextRequest) {
 
   if (!user && isProtectedPath(pathname)) {
     const url = request.nextUrl.clone()
-    url.pathname = "/login"
+    url.pathname = isStudentPath(pathname) ? "/student-login" : "/login"
     url.searchParams.set("next", pathname)
     return NextResponse.redirect(url)
   }
@@ -53,5 +61,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/teacher/:path*", "/student/:path*", "/login"],
+  matcher: ["/teacher/:path*", "/student/:path*", "/login", "/student-login"],
 }
