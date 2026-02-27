@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Icons } from "@/components/elevate/icons"
 import { BadgeChooser, ElevateButton, InputField, LevelBadge, RadioCardChooser } from "@/components/elevate/shared"
@@ -27,6 +27,7 @@ const levelColor: Record<string, string> = {
 export default function TeacherClassesPage() {
   const router = useRouter()
   const { context, loading } = useAppContext()
+  const createSectionRef = useRef<HTMLDivElement | null>(null)
 
   const [classes, setClasses] = useState<TeacherClassSummary[]>([])
   const [busy, setBusy] = useState(false)
@@ -35,13 +36,11 @@ export default function TeacherClassesPage() {
   const [filter, setFilter] = useState<string | string[]>("active")
   const [newClassName, setNewClassName] = useState("")
   const [newClassLevel, setNewClassLevel] = useState("b1")
-  const [newClassCode, setNewClassCode] = useState("")
   const [newClassYear, setNewClassYear] = useState("")
 
   const [editingClassId, setEditingClassId] = useState<string | null>(null)
   const [editingName, setEditingName] = useState("")
   const [editingLevel, setEditingLevel] = useState("b1")
-  const [editingCode, setEditingCode] = useState("")
   const [editingYear, setEditingYear] = useState("")
 
   const supabase = createClient()
@@ -56,6 +55,20 @@ export default function TeacherClassesPage() {
     loadClasses()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [context?.userId, context?.activeSchoolId])
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    if (window.location.hash !== "#create-class") return
+
+    const section = createSectionRef.current
+    if (!section) return
+
+    requestAnimationFrame(() => {
+      section.scrollIntoView({ behavior: "smooth", block: "start" })
+      const firstInput = section.querySelector("input") as HTMLInputElement | null
+      firstInput?.focus()
+    })
+  }, [])
 
   const visibleClasses = useMemo(() => {
     if (filter === "archived") return classes.filter((c) => !!c.archivedAt)
@@ -76,12 +89,10 @@ export default function TeacherClassesPage() {
       const classId = await createTeacherClass(supabase, context.userId, context.activeSchoolId, {
         name: newClassName,
         level: newClassLevel,
-        classCode: newClassCode,
         academicYear: newClassYear,
       })
 
       setNewClassName("")
-      setNewClassCode("")
       setNewClassYear("")
       await loadClasses()
       router.push(`/teacher/classes/${classId}`)
@@ -96,7 +107,6 @@ export default function TeacherClassesPage() {
     setEditingClassId(classItem.id)
     setEditingName(classItem.name)
     setEditingLevel(classItem.level.toLowerCase())
-    setEditingCode(classItem.classCode || "")
     setEditingYear(classItem.academicYear || "")
     setError(null)
   }
@@ -109,7 +119,6 @@ export default function TeacherClassesPage() {
       await updateTeacherClass(supabase, editingClassId, {
         name: editingName,
         level: editingLevel,
-        classCode: editingCode,
         academicYear: editingYear,
       })
       setEditingClassId(null)
@@ -170,10 +179,7 @@ export default function TeacherClassesPage() {
                   <div className="font-sans text-xs text-text-light">
                     {classItem.students} élèves &middot; Moy. {classItem.avg}%
                   </div>
-                  <div className="font-sans text-[11px] text-text-light mt-0.5">
-                    Code: {classItem.classCode || "—"}
-                    {classItem.academicYear ? ` · ${classItem.academicYear}` : ""}
-                  </div>
+                  {classItem.academicYear && <div className="font-sans text-[11px] text-text-light mt-0.5">{classItem.academicYear}</div>}
                 </div>
                 <LevelBadge level={classItem.level} colorClass={levelColor[classItem.level] || "violet"} />
               </div>
@@ -209,10 +215,9 @@ export default function TeacherClassesPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-card rounded-2xl border border-gray-mid p-6 flex flex-col gap-3">
+        <div id="create-class" ref={createSectionRef} className="bg-card rounded-2xl border border-gray-mid p-6 flex flex-col gap-3">
           <h4 className="font-serif text-lg font-bold text-navy">Créer une classe</h4>
           <InputField label="Nom de la classe" placeholder="ex. 10B - Anglais A2" icon={<Icons.Book />} value={newClassName} onChange={setNewClassName} />
-          <InputField label="Code classe (optionnel)" placeholder="ex. 10BA2" icon={<Icons.Settings />} value={newClassCode} onChange={setNewClassCode} />
           <InputField label="Année scolaire (optionnel)" placeholder="2026-2027" icon={<Icons.Calendar />} value={newClassYear} onChange={setNewClassYear} />
           <RadioCardChooser
             columns={6}
@@ -235,7 +240,6 @@ export default function TeacherClassesPage() {
           {editingClassId ? (
             <>
               <InputField label="Nom de la classe" icon={<Icons.Book />} value={editingName} onChange={setEditingName} />
-              <InputField label="Code classe" icon={<Icons.Settings />} value={editingCode} onChange={setEditingCode} />
               <InputField label="Année scolaire" icon={<Icons.Calendar />} value={editingYear} onChange={setEditingYear} />
               <RadioCardChooser
                 columns={6}

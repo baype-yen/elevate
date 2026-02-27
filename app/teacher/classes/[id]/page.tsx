@@ -123,7 +123,6 @@ type ClassDetailState = {
     id: string
     name: string
     level: string
-    classCode: string | null
     academicYear: string | null
     archivedAt: string | null
     schoolId: string
@@ -275,10 +274,9 @@ export default function TeacherClassDetailPage() {
             <Link href="/teacher/classes" className="font-sans text-xs text-violet hover:underline">&larr; Retour aux classes</Link>
           </div>
           <h2 className="font-serif text-2xl font-bold text-navy">{data.classItem.name}</h2>
-          <div className="font-sans text-[13px] text-text-mid mt-1">
-            Code: {data.classItem.classCode || "—"}
-            {data.classItem.academicYear ? ` · ${data.classItem.academicYear}` : ""}
-          </div>
+          {data.classItem.academicYear && (
+            <div className="font-sans text-[13px] text-text-mid mt-1">{data.classItem.academicYear}</div>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <LevelBadge level={data.classItem.level} colorClass={levelColor(data.classItem.level)} />

@@ -6,9 +6,10 @@ import { BadgeChooser, ElevateButton, InputField, LevelBadge } from "@/component
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
 import { useAppContext } from "@/hooks/use-app-context"
-import { fetchTeacherStudentsData } from "@/lib/supabase/client-data"
+import { fetchTeacherStudentsData, type TeacherStudentRow, type TeacherStudentsData } from "@/lib/supabase/client-data"
 
 const avatarColors = ["bg-abricot", "bg-violet", "bg-watermelon", "bg-navy"]
+const cefrLevels = ["A1", "A2", "B1", "B2", "C1", "C2"] as const
 
 function levelColorClass(level: string) {
   if (level === "B2") return "watermelon"
@@ -97,15 +98,19 @@ function buildTempPassword(firstName: string, lastName: string, index: number) {
 export default function StudentsPage() {
   const { context, loading } = useAppContext()
   const [selectedClass, setSelectedClass] = useState<string | string[]>("all")
-  const [data, setData] = useState<{ className: string; students: any[]; classes: Array<{ id: string; name: string }> } | null>(null)
+  const [data, setData] = useState<TeacherStudentsData | null>(null)
   const [enrollClassId, setEnrollClassId] = useState("")
   const [studentName, setStudentName] = useState("")
   const [studentEmail, setStudentEmail] = useState("")
   const [studentPassword, setStudentPassword] = useState("")
   const [enrollBusy, setEnrollBusy] = useState(false)
   const [bulkSyncBusy, setBulkSyncBusy] = useState(false)
+  const [levelBusyId, setLevelBusyId] = useState<string | null>(null)
   const [enrollError, setEnrollError] = useState<string | null>(null)
   const [enrollSuccess, setEnrollSuccess] = useState<string | null>(null)
+  const [levelError, setLevelError] = useState<string | null>(null)
+  const [levelSuccess, setLevelSuccess] = useState<string | null>(null)
+  const [levelDrafts, setLevelDrafts] = useState<Record<string, string>>({})
   const [emailDomain, setEmailDomain] = useState("btsmco.local")
   const [credentialHelperMessage, setCredentialHelperMessage] = useState<string | null>(null)
   const [rosterCandidates, setRosterCandidates] = useState<Array<{ id: string; firstName: string; lastName: string }>>([])
@@ -123,6 +128,8 @@ export default function StudentsPage() {
   }
 
   useEffect(() => {
+    setLevelError(null)
+    setLevelSuccess(null)
     loadStudents()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [context?.userId, context?.activeSchoolId, selectedClass])
@@ -138,6 +145,21 @@ export default function StudentsPage() {
       setEnrollClassId(data.classes[0].id)
     }
   }, [data?.classes, enrollClassId])
+
+  useEffect(() => {
+    if (!data?.students.length) {
+      setLevelDrafts({})
+      return
+    }
+
+    const nextDrafts: Record<string, string> = {}
+    for (const student of data.students) {
+      if (student.canEditLevel) {
+        nextDrafts[student.id] = student.level
+      }
+    }
+    setLevelDrafts(nextDrafts)
+  }, [data?.students])
 
   useEffect(() => {
     if (!context || !enrollClassId) {
@@ -310,6 +332,57 @@ export default function StudentsPage() {
       setEnrollSuccess(`Synchronisation terminée : ${created} créés, ${updated} mots de passe réinitialisés.`)
     } finally {
       setBulkSyncBusy(false)
+    }
+  }
+
+  const updateLevelDraft = (studentRowId: string, level: string) => {
+    setLevelDrafts((previous) => ({
+      ...previous,
+      [studentRowId]: level,
+    }))
+  }
+
+  const onSaveStudentLevel = async (student: TeacherStudentRow) => {
+    if (!student.canEditLevel || !student.studentId || !student.classId) {
+      setLevelError("Ce profil n'a pas encore d'accès élève actif.")
+      return
+    }
+
+    const selectedLevel = (levelDrafts[student.id] || student.level || "B1").toUpperCase()
+    if (selectedLevel === student.level) {
+      setLevelSuccess(`Le niveau de ${student.name} est déjà ${selectedLevel}.`)
+      setLevelError(null)
+      return
+    }
+
+    try {
+      setLevelBusyId(student.id)
+      setLevelError(null)
+      setLevelSuccess(null)
+
+      const response = await fetch("/api/teacher/update-student-level", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          classId: student.classId,
+          studentId: student.studentId,
+          cefrLevel: selectedLevel,
+        }),
+      })
+
+      const payload = (await response.json().catch(() => ({}))) as { error?: string; cefrLevel?: string }
+      if (!response.ok) {
+        throw new Error(payload.error || "Impossible de mettre à jour le niveau de l'élève.")
+      }
+
+      setLevelSuccess(`Niveau mis à jour pour ${student.name} : ${payload.cefrLevel || selectedLevel}.`)
+      await loadStudents()
+    } catch (error: any) {
+      setLevelError(error?.message || "Impossible de mettre à jour le niveau de l'élève.")
+    } finally {
+      setLevelBusyId(null)
     }
   }
 
@@ -486,15 +559,17 @@ export default function StudentsPage() {
         </div>
 
         <div className="bg-card rounded-2xl border border-gray-mid overflow-hidden">
-          <div className="hidden md:grid grid-cols-[2fr_1fr_1fr_1fr_100px] px-5 py-3 bg-gray-light font-sans text-[11px] font-semibold tracking-wider uppercase text-text-light">
+          <div className="hidden md:grid grid-cols-[1.9fr_1.7fr_0.8fr_1fr_80px] px-5 py-3 bg-gray-light font-sans text-[11px] font-semibold tracking-wider uppercase text-text-light">
             <span>Élève</span>
-            <span>Niveau</span>
+            <span>Niveau CECRL</span>
             <span>Score</span>
             <span>Dernière activité</span>
             <span>Actions</span>
           </div>
+          {levelError && <div className="px-5 py-2 font-sans text-sm text-watermelon border-t border-gray-light">{levelError}</div>}
+          {levelSuccess && <div className="px-5 py-2 font-sans text-sm text-violet border-t border-gray-light">{levelSuccess}</div>}
           {data.students.map((s, i) => (
-            <div key={i} className="grid grid-cols-1 md:grid-cols-[2fr_1fr_1fr_1fr_100px] px-5 py-3.5 items-center border-t border-gray-light gap-2 md:gap-0">
+            <div key={s.id} className="grid grid-cols-1 md:grid-cols-[1.9fr_1.7fr_0.8fr_1fr_80px] px-5 py-3.5 items-center border-t border-gray-light gap-2 md:gap-0">
               <div className="flex items-center gap-2.5">
                 <div className={cn(
                   "w-[34px] h-[34px] rounded-[10px] flex items-center justify-center font-sans font-bold text-xs text-white shrink-0",
@@ -505,7 +580,33 @@ export default function StudentsPage() {
                 <div className="font-sans text-sm font-semibold text-text-dark">{s.name}</div>
               </div>
               <div>
-                <LevelBadge level={s.level} colorClass={levelColorClass(s.level)} />
+                {s.canEditLevel ? (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <select
+                      value={levelDrafts[s.id] || s.level}
+                      onChange={(event) => updateLevelDraft(s.id, event.target.value.toUpperCase())}
+                      className="h-9 px-2.5 rounded-lg border border-gray-mid bg-card font-sans text-sm font-semibold text-navy outline-none focus:border-navy"
+                      disabled={levelBusyId === s.id}
+                    >
+                      {cefrLevels.map((level) => (
+                        <option key={level} value={level}>{level}</option>
+                      ))}
+                    </select>
+                    <ElevateButton
+                      size="sm"
+                      variant="outline"
+                      onClick={() => onSaveStudentLevel(s)}
+                      disabled={levelBusyId === s.id || (levelDrafts[s.id] || s.level) === s.level}
+                    >
+                      {levelBusyId === s.id ? "..." : "OK"}
+                    </ElevateButton>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <LevelBadge level={s.level} colorClass={levelColorClass(s.level)} />
+                    <span className="font-sans text-[11px] text-text-light">Inscrire le compte pour personnaliser</span>
+                  </div>
+                )}
               </div>
               <div className="font-serif text-base font-bold text-navy">{s.score}%</div>
               <div className="font-sans text-[13px] text-text-light">{s.lastActive}</div>

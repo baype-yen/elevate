@@ -35,6 +35,18 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
     router.push("/login")
   }
 
+  const onNewClass = () => {
+    if (pathname === "/teacher/classes") {
+      const section = document.getElementById("create-class")
+      section?.scrollIntoView({ behavior: "smooth", block: "start" })
+      const firstInput = section?.querySelector("input") as HTMLInputElement | null
+      firstInput?.focus()
+      return
+    }
+
+    router.push("/teacher/classes#create-class")
+  }
+
   if (loading || !context) {
     return (
       <div className="min-h-screen bg-off-white flex items-center justify-center">
@@ -65,7 +77,7 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <ElevateButton variant="secondary" size="sm" icon={<Icons.Plus />} onClick={() => router.push("/teacher/classes")}>Nouvelle classe</ElevateButton>
+            <ElevateButton variant="secondary" size="sm" icon={<Icons.Plus />} onClick={onNewClass}>Nouvelle classe</ElevateButton>
             <button onClick={onSignOut} className="w-9 h-9 rounded-[10px] bg-navy-mid flex items-center justify-center text-white/70 hover:text-white transition-colors cursor-pointer">
               <Icons.LogOut />
             </button>

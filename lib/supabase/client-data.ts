@@ -8,6 +8,15 @@ function normalizeLevel(level: string) {
   return level.toLowerCase()
 }
 
+function normalizePersonKey(name: string) {
+  return (name || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+}
+
 function toFileType(mimeType: string | null | undefined) {
   return (mimeType || "FILE").split("/").pop()?.toUpperCase() || "FILE"
 }
@@ -79,6 +88,24 @@ export type TeacherClassSummary = {
   students: number
   avg: number
   pending: number
+}
+
+export type TeacherStudentRow = {
+  id: string
+  classId: string
+  studentId: string | null
+  name: string
+  initials: string
+  level: string
+  score: number
+  lastActive: string
+  canEditLevel: boolean
+}
+
+export type TeacherStudentsData = {
+  className: string
+  students: TeacherStudentRow[]
+  classes: Array<{ id: string; name: string }>
 }
 
 export async function fetchTeacherDashboardData(supabase: SupabaseClient, userId: string, schoolId: string | null) {
@@ -484,7 +511,7 @@ export async function fetchTeacherStudentsData(
   userId: string,
   schoolId: string | null,
   classId?: string | null,
-) {
+): Promise<TeacherStudentsData> {
   let classQuery = supabase
     .from("classes")
     .select("id, name, cefr_level")
@@ -497,7 +524,7 @@ export async function fetchTeacherStudentsData(
   const { data: classes } = await classQuery
 
   const classIds = (classes || []).map((c) => c.id)
-  if (!classIds.length) return { className: "Aucune classe", students: [] as any[], classes: [] as any[] }
+  if (!classIds.length) return { className: "Aucune classe", students: [], classes: [] }
 
   const { data: rosterStudents } = await supabase
     .from("class_students")
@@ -533,44 +560,64 @@ export async function fetchTeacherStudentsData(
     }
   }
 
-  const rosterList = (rosterStudents || []).map((r) => {
+  const rosterList: TeacherStudentRow[] = (rosterStudents || []).map((r) => {
     const name = `${r.first_name} ${r.last_name}`.trim()
     return {
+      id: `roster:${r.id}`,
+      classId: r.class_id,
+      studentId: null,
       name,
       initials: `${r.first_name[0] || ""}${r.last_name[0] || ""}`.toUpperCase(),
       level: classLevelMap.get(r.class_id) || "B1",
       score: 0,
       lastActive: r.city || "Fiche de liste",
+      canEditLevel: false,
     }
   })
 
-  const enrolledList = (enrollments || []).map((e) => {
+  const enrolledList: TeacherStudentRow[] = (enrollments || []).map((e) => {
     const name = (e.profiles as any)?.full_name || "Élève"
     const scores = studentScoreMap.get(e.student_id) || []
     const score = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0
     const lastDate = studentLastMap.get(e.student_id)
     const lastActive = lastDate ? new Date(lastDate).toLocaleDateString("fr-FR") : "Aucune activité"
     return {
+      id: `student:${e.student_id}`,
+      classId: e.class_id,
+      studentId: e.student_id,
       name,
       initials: name.split(" ").map((p: string) => p[0]).join("").slice(0, 2).toUpperCase(),
       level: upLevel((e.profiles as any)?.cefr_level),
       score,
       lastActive,
+      canEditLevel: true,
     }
   })
 
-  const merged = [...enrolledList, ...rosterList]
-  const unique = new Map<string, any>()
+  const enrolledNameClassKeys = new Set(
+    enrolledList.map((student) => `${student.classId}:${normalizePersonKey(student.name)}`),
+  )
+
+  const filteredRoster = rosterList.filter((student) => {
+    const key = `${student.classId}:${normalizePersonKey(student.name)}`
+    return !enrolledNameClassKeys.has(key)
+  })
+
+  const merged = [...enrolledList, ...filteredRoster]
+  const unique = new Map<string, TeacherStudentRow>()
   for (const student of merged) {
-    const key = `${student.name}|${student.level}`
-    if (!unique.has(key)) {
+    const key = student.studentId ? `student:${student.studentId}` : student.id
+    const existing = unique.get(key)
+    if (!existing || (!existing.canEditLevel && student.canEditLevel)) {
       unique.set(key, student)
     }
   }
 
+  const students = Array.from(unique.values()).sort((a, b) => a.name.localeCompare(b.name, "fr"))
+
   return {
     className: classId ? classes?.[0]?.name || "Classe" : "Toutes les classes actives",
-    students: Array.from(unique.values()),
+    students,
     classes: (classes || []).map((c) => ({ id: c.id, name: c.name })),
   }
 }
