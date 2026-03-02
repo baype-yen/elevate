@@ -15,6 +15,7 @@ const navItems = [
   { href: "/teacher/students", label: "Élèves", icon: Icons.Users },
   { href: "/teacher/documents", label: "Documents", icon: Icons.FileText },
   { href: "/teacher/work", label: "Travaux élèves", icon: Icons.Clipboard },
+  { href: "/teacher/photo-exams", label: "Copies photo", icon: Icons.Camera },
   { href: "/teacher/activity", label: "Activité", icon: Icons.Zap },
 ]
 
