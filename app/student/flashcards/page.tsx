@@ -31,6 +31,7 @@ export default function FlashcardsPage() {
   const [reviewCards, setReviewCards] = useState<FlashcardRow[]>([])
   const [reviewIndex, setReviewIndex] = useState(0)
   const [revealed, setRevealed] = useState(false)
+  const [studentAnswer, setStudentAnswer] = useState("")
   const [reviewResults, setReviewResults] = useState<{ known: number; learning: number }>({ known: 0, learning: 0 })
   const [reviewDone, setReviewDone] = useState(false)
 
@@ -76,6 +77,7 @@ export default function FlashcardsPage() {
     setReviewCards(cards)
     setReviewIndex(0)
     setRevealed(false)
+    setStudentAnswer("")
     setReviewResults({ known: 0, learning: 0 })
     setReviewDone(false)
     setReviewing(true)
@@ -101,6 +103,7 @@ export default function FlashcardsPage() {
     if (reviewIndex + 1 < reviewCards.length) {
       setReviewIndex(reviewIndex + 1)
       setRevealed(false)
+      setStudentAnswer("")
     } else {
       setReviewDone(true)
     }
@@ -168,29 +171,57 @@ export default function FlashcardsPage() {
         </div>
 
         {/* Card */}
-        <div
-          className="bg-white border-2 border-gray-200 rounded-xl overflow-hidden shadow-sm cursor-pointer"
-          onClick={() => !revealed && setRevealed(true)}
-        >
+        <div className="bg-white border-2 border-gray-200 rounded-xl overflow-hidden shadow-sm">
           {/* Front */}
           <div className={cn("p-8 text-center", revealed && "border-b border-dashed border-gray-200")}>
             <div className="uppercase text-xs tracking-widest text-text-light mb-3">
-              {currentCard.card_type === "fill_in_blank" ? "Complétez" : "Trouvez l'erreur"}
+              {currentCard.card_type === "fill_in_blank" ? "Complétez" : currentCard.card_type === "explanation" ? "Question" : "Corrigez"}
             </div>
             <div className="font-sans text-lg font-medium text-navy">{currentCard.front}</div>
             {currentCard.hint && (
               <div className="font-sans text-sm text-text-mid mt-2">Indice : {currentCard.hint}</div>
             )}
-            {!revealed && (
-              <div className="font-sans text-sm text-text-light mt-4">Tap pour voir la réponse</div>
-            )}
           </div>
+
+          {/* Student answer input */}
+          {!revealed && (
+            <div className="px-8 pb-6 pt-4">
+              <textarea
+                value={studentAnswer}
+                onChange={(e) => setStudentAnswer(e.target.value)}
+                placeholder="Écris ta correction ici..."
+                className="w-full min-h-[80px] rounded-lg border-2 border-gray-200 px-3 py-2.5 font-sans text-sm text-text-dark placeholder:text-text-light outline-none focus:border-navy resize-none"
+              />
+              <div className="flex gap-2 mt-3">
+                <button
+                  onClick={() => setRevealed(true)}
+                  className="flex-1 bg-navy text-white border-none py-2.5 rounded-lg font-sans text-sm font-medium cursor-pointer hover:bg-navy-mid transition-colors"
+                >
+                  Vérifier
+                </button>
+                <button
+                  onClick={() => setRevealed(true)}
+                  className="px-4 bg-gray-100 text-text-mid border-none py-2.5 rounded-lg font-sans text-sm cursor-pointer hover:bg-gray-200 transition-colors"
+                >
+                  Passer
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Back — revealed */}
           {revealed && (
-            <div className="p-8 bg-gray-50 text-center">
-              <div className="uppercase text-xs tracking-widest text-text-light mb-3">Correction</div>
-              <div className="font-sans text-lg font-medium text-green-700">{currentCard.back}</div>
+            <div className="p-8 bg-gray-50">
+              {studentAnswer.trim() && (
+                <div className="mb-4">
+                  <div className="uppercase text-xs tracking-widest text-text-light mb-2">Ta réponse</div>
+                  <div className="font-sans text-sm text-text-dark bg-white rounded-lg p-3 border border-gray-200">{studentAnswer}</div>
+                </div>
+              )}
+              <div className="text-center">
+                <div className="uppercase text-xs tracking-widest text-text-light mb-3">Correction</div>
+                <div className="font-sans text-lg font-medium text-green-700">{currentCard.back}</div>
+              </div>
             </div>
           )}
         </div>

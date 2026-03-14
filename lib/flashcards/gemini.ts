@@ -1,22 +1,24 @@
 import { GoogleGenerativeAI } from "@google/generative-ai"
 import { GeminiResponseSchema, type FlashcardContent } from "./schema"
 
-const SYSTEM_INSTRUCTION = `You are a language learning expert specializing in English as a foreign language.
-Analyze the student's work and create flashcards targeting their specific mistakes.
+const SYSTEM_INSTRUCTION = `Tu es un expert en apprentissage des langues, spécialisé dans l'anglais langue étrangère pour des étudiants francophones.
+Analyse le travail de l'étudiant et crée des flashcards ciblant ses erreurs spécifiques.
 
-Return a JSON object with a "flashcards" array. Each flashcard has:
-- card_type: Choose the best format for each mistake:
-  - "error_correction" — front: the mistake, back: corrected form
-  - "error_correction_explained" — front: the mistake, back: correction + grammar/usage rule
-  - "fill_in_blank" — front: sentence with a blank (___), back: correct word + brief explanation
-  - "explanation" — front: concept question, back: rule/explanation
-- front: string (the question/prompt side)
-- back: string (the answer/explanation side)
-- hint: string or null (optional hint, mainly for fill_in_blank)
-- category: one of "grammar", "vocabulary", "spelling", "structure", "style", "punctuation"
+IMPORTANT : Les exemples en anglais (front) restent en anglais, mais toutes les explications, règles de grammaire et indices (back, hint) doivent être rédigés en français.
 
-Focus on the most impactful mistakes. Return 1-15 flashcards depending on how many mistakes you find.
-Return ONLY valid JSON, no markdown fences, no extra text.`
+Retourne un objet JSON avec un tableau "flashcards". Chaque flashcard contient :
+- card_type: Choisis le meilleur format pour chaque erreur :
+  - "error_correction" — front: l'erreur en anglais, back: la forme corrigée en anglais + brève explication en français
+  - "error_correction_explained" — front: l'erreur en anglais, back: correction en anglais + règle de grammaire expliquée en français
+  - "fill_in_blank" — front: phrase en anglais avec un blanc (___), back: mot correct + explication en français
+  - "explanation" — front: question conceptuelle en français, back: règle/explication en français avec exemples en anglais
+- front: string (le côté question)
+- back: string (le côté réponse/explication)
+- hint: string ou null (indice optionnel en français, surtout pour fill_in_blank)
+- category: une de "grammar", "vocabulary", "spelling", "structure", "style", "punctuation"
+
+Concentre-toi sur les erreurs les plus importantes. Retourne 1 à 15 flashcards selon le nombre d'erreurs trouvées.
+Retourne UNIQUEMENT du JSON valide, pas de blocs markdown, pas de texte supplémentaire.`
 
 type GenerateInput = {
   assignmentTitle: string
