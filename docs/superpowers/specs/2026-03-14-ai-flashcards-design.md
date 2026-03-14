@@ -28,7 +28,8 @@ Add AI-powered flashcard generation to Elevate. When a teacher grades a student'
 | `back` | string | Answer/explanation side |
 | `hint` | string \| null | Optional hint (for fill-in-blank) |
 | `category` | `"grammar"` \| `"vocabulary"` \| `"spelling"` \| `"structure"` \| `"style"` \| `"punctuation"` | Error category |
-| `cefr_level` | string | From assignment/student |
+| `generated_by` | string | Teacher ID who triggered generation |
+| `cefr_level` | string | From the assignment's `cefr_level` field |
 | `status` | `"learning"` \| `"known"` | Student self-assessment |
 | `created_at` | timestamp | When generated |
 | `reviewed_at` | timestamp \| null | Last review time |
@@ -40,9 +41,9 @@ Add AI-powered flashcard generation to Elevate. When a teacher grades a student'
 
 ## API Design
 
-### `POST /api/flashcards/generate`
+### `POST /api/teacher/flashcards/generate`
 
-**Auth:** Firebase session cookie (teacher role required)
+**Auth:** Bearer token from `Authorization` header (consistent with existing `/api/teacher/*` routes)
 
 **Request body:**
 ```typescript
@@ -52,24 +53,25 @@ Add AI-powered flashcard generation to Elevate. When a teacher grades a student'
 ```
 
 **Flow:**
-1. Authenticate teacher via `__session` cookie
+1. Authenticate teacher via Bearer token in `Authorization` header (matching existing API route pattern)
 2. Fetch submission from Firestore (validates it exists and is graded)
-3. Fetch the parent assignment (title, description, type, cefr_level)
-4. Build Gemini prompt with full context:
+3. **Duplicate guard:** Query `flashcards` where `submission_id == request.submission_id`. If flashcards already exist, return them without calling Gemini (prevents duplicate generation on repeated clicks)
+4. Fetch the parent assignment (title, description, type, cefr_level)
+5. Build Gemini prompt with full context:
    - Assignment prompt/description
-   - CEFR level
+   - CEFR level (from assignment's `cefr_level` field)
    - Student's submitted text
    - Teacher's feedback
    - Score
-5. Call Gemini Flash API (single prompt, batch generation)
-6. Validate response with Zod schema
-7. Batch-write flashcards to Firestore `flashcards` collection
-8. Return created flashcards array
+6. Call Gemini Flash API (single prompt, batch generation)
+7. Validate response with Zod schema (Gemini returns card content; server injects `student_id`, `submission_id`, `assignment_id`, `class_id`, `school_id`, `generated_by`, `cefr_level`, `status: "learning"`, timestamps)
+8. Batch-write flashcards to Firestore using `WriteBatch` (atomic — all or nothing)
+9. Return created flashcards array
 
 **Error handling:**
-- If Gemini returns invalid JSON or Zod validation fails, retry once
-- If still failing, return error to teacher — no partial saves
-- Standard HTTP error responses for auth/not-found/validation failures
+- If Gemini returns invalid JSON or Zod validation fails, retry once with same prompt
+- If still failing, return 502 error to teacher with message "La génération a échoué, veuillez réessayer" — no partial saves
+- Standard HTTP error responses: 401 (unauthorized), 404 (submission not found), 400 (submission not graded), 502 (Gemini failure)
 
 **Response:**
 ```typescript
@@ -164,6 +166,10 @@ When student taps "Commencer la révision":
 4. **Auto-advance** to next card after selection
 5. **End screen** after all cards reviewed: summary of results
 
+### Empty State
+
+When a student has no flashcards yet, show a friendly message: "Pas encore de flashcards. Tes enseignants peuvent en générer après avoir corrigé tes devoirs." with an illustration or icon.
+
 ### Data Fetching
 
 - Query `flashcards` collection: `where student_id == currentUser AND status == selectedFilter`, ordered by `created_at`
@@ -189,7 +195,7 @@ match /flashcards/{flashcardId} {
 
 ### API Route Auth
 
-- Validate `__session` cookie via Firebase Admin SDK
+- Validate Bearer token from `Authorization` header via Firebase Admin SDK (consistent with existing `/api/teacher/*` routes)
 - Verify user has teacher role
 - Verify teacher has access to the submission's class (via `school_memberships`)
 
@@ -209,3 +215,6 @@ match /flashcards/{flashcardId} {
 - Flashcard sharing between students
 - Manual flashcard creation by teachers or students
 - Deck grouping by assignment (flat list only)
+- Flashcard deletion or archiving
+- Rate limiting on Gemini API calls
+- Offline resilience for review sessions
