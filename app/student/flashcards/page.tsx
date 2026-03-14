@@ -119,10 +119,7 @@ export default function FlashcardsPage() {
     const labels: Record<string, string> = {
       grammar: "Grammaire",
       vocabulary: "Vocabulaire",
-      spelling: "Orthographe",
-      structure: "Structure",
-      style: "Style",
-      punctuation: "Ponctuation",
+      syntax: "Syntaxe",
     }
     return labels[cat] || cat
   }

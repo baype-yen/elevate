@@ -1,7 +1,7 @@
 import { z } from "zod"
 
 export const CARD_TYPES = ["error_correction", "error_correction_explained", "fill_in_blank", "explanation"] as const
-export const CATEGORIES = ["grammar", "vocabulary", "spelling", "structure", "style", "punctuation"] as const
+export const CATEGORIES = ["grammar", "vocabulary", "syntax"] as const
 
 export const FlashcardContentSchema = z.object({
   card_type: z.enum(CARD_TYPES),

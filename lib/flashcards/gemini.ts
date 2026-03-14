@@ -15,9 +15,10 @@ Retourne un objet JSON avec un tableau "flashcards". Chaque flashcard contient :
 - front: string (le côté question)
 - back: string (le côté réponse/explication)
 - hint: string ou null (indice optionnel en français, surtout pour fill_in_blank)
-- category: une de "grammar", "vocabulary", "spelling", "structure", "style", "punctuation"
+- category: une de "grammar", "vocabulary", "syntax"
 
-Concentre-toi sur les erreurs les plus importantes. Retourne 1 à 15 flashcards selon le nombre d'erreurs trouvées.
+Concentre-toi UNIQUEMENT sur les erreurs de grammaire, vocabulaire et syntaxe. Ignore les erreurs de ponctuation, orthographe mineure ou style.
+Retourne 1 à 15 flashcards selon le nombre d'erreurs trouvées.
 Retourne UNIQUEMENT du JSON valide, pas de blocs markdown, pas de texte supplémentaire.`
 
 type GenerateInput = {
