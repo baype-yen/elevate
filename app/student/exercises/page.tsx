@@ -99,6 +99,7 @@ function typeLabel(type: string) {
   if (key === "quiz") return "Quiz"
   if (key === "reading") return "Lecture"
   if (key === "writing") return "Écriture"
+  if (key === "conjugation") return "Conjugaison"
   if (key === "grammar") return "Grammaire"
   if (key === "vocabulary") return "Vocabulaire"
   if (key === "exercise") return "Exercice"

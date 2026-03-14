@@ -39,6 +39,113 @@ type WorkItem = {
   level: string
 }
 
+type FeedbackSections = {
+  strengths: string
+  improvements: string
+  advice: string
+}
+
+const FEEDBACK_SECTION_FIELDS: Array<{
+  key: keyof FeedbackSections
+  label: string
+  placeholder: string
+  headings: string[]
+}> = [
+  {
+    key: "strengths",
+    label: "Points forts",
+    placeholder: "Ce que l'élève a bien réussi...",
+    headings: ["Points forts"],
+  },
+  {
+    key: "improvements",
+    label: "À améliorer",
+    placeholder: "Les points à retravailler...",
+    headings: ["À améliorer", "A ameliorer"],
+  },
+  {
+    key: "advice",
+    label: "Conseil concret",
+    placeholder: "Une action simple pour progresser...",
+    headings: ["Conseil concret"],
+  },
+]
+
+function emptyFeedbackSections(): FeedbackSections {
+  return {
+    strengths: "",
+    improvements: "",
+    advice: "",
+  }
+}
+
+function parseFeedbackSections(feedback: string): FeedbackSections {
+  const normalized = feedback.replace(/\r\n/g, "\n").trim()
+  if (!normalized) return emptyFeedbackSections()
+
+  const buckets: Record<keyof FeedbackSections, string[]> = {
+    strengths: [],
+    improvements: [],
+    advice: [],
+  }
+
+  let activeSection: keyof FeedbackSections | null = null
+  let hasSectionHeadings = false
+
+  for (const rawLine of normalized.split("\n")) {
+    const line = rawLine.trim()
+    let matchedSection: keyof FeedbackSections | null = null
+
+    for (const section of FEEDBACK_SECTION_FIELDS) {
+      for (const heading of section.headings) {
+        const escapedLabel = heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+        const headingMatch = line.match(new RegExp(`^${escapedLabel}\\s*:?\\s*(.*)$`, "i"))
+        if (!headingMatch) continue
+
+        matchedSection = section.key
+        hasSectionHeadings = true
+        activeSection = section.key
+
+        const inlineValue = headingMatch[1]?.trim()
+        if (inlineValue) buckets[section.key].push(inlineValue)
+        break
+      }
+
+      if (matchedSection) break
+    }
+
+    if (matchedSection) continue
+
+    if (activeSection) {
+      buckets[activeSection].push(rawLine)
+      continue
+    }
+
+    buckets.advice.push(rawLine)
+  }
+
+  if (!hasSectionHeadings) {
+    return {
+      strengths: "",
+      improvements: "",
+      advice: normalized,
+    }
+  }
+
+  return {
+    strengths: buckets.strengths.join("\n").trim(),
+    improvements: buckets.improvements.join("\n").trim(),
+    advice: buckets.advice.join("\n").trim(),
+  }
+}
+
+function formatFeedbackSections(sections: FeedbackSections): string {
+  const hasContent = FEEDBACK_SECTION_FIELDS.some((section) => sections[section.key].trim())
+  if (!hasContent) return ""
+
+  return FEEDBACK_SECTION_FIELDS.map((section) => `${section.label} :\n${sections[section.key].trim()}`).join("\n\n")
+}
+
 function levelColorClass(level: string) {
   if (level === "B2" || level === "C1" || level === "C2") return "watermelon"
   if (level === "B1") return "abricot"
@@ -56,7 +163,9 @@ function typeLabel(type: string) {
   if (key === "quiz") return "Quiz"
   if (key === "reading") return "Lecture"
   if (key === "writing") return "Écriture"
+  if (key === "conjugation") return "Conjugaison"
   if (key === "grammar") return "Grammaire"
+  if (key === "vocabulary") return "Vocabulaire"
   if (key === "exercise") return "Exercice"
   if (key === "mixed") return "Mixte"
   return type
@@ -88,7 +197,7 @@ export default function WorkPage() {
 
   const [selectedSubmissionId, setSelectedSubmissionId] = useState<string | null>(null)
   const [gradeScore, setGradeScore] = useState("")
-  const [gradeFeedback, setGradeFeedback] = useState("")
+  const [gradeFeedbackSections, setGradeFeedbackSections] = useState<FeedbackSections>(emptyFeedbackSections())
   const [createPersonalized, setCreatePersonalized] = useState(true)
 
   const [busy, setBusy] = useState(false)
@@ -140,13 +249,13 @@ export default function WorkPage() {
   useEffect(() => {
     if (!selectedWork) {
       setGradeScore("")
-      setGradeFeedback("")
+      setGradeFeedbackSections(emptyFeedbackSections())
       setCreatePersonalized(true)
       return
     }
 
     setGradeScore(selectedWork.score !== null && selectedWork.score !== undefined ? String(Math.round(selectedWork.score)) : "")
-    setGradeFeedback(selectedWork.feedback || "")
+    setGradeFeedbackSections(parseFeedbackSections(selectedWork.feedback || ""))
     setCreatePersonalized(selectedWork.score === null || selectedWork.score === undefined)
   }, [selectedWork?.id, selectedWork?.score, selectedWork?.feedback])
 
@@ -307,6 +416,9 @@ export default function WorkPage() {
   const saveGrade = async () => {
     if (!context || !selectedWork) return
 
+    const formattedFeedback = formatFeedbackSections(gradeFeedbackSections)
+    const improvementsFocus = gradeFeedbackSections.improvements.trim()
+
     const numericScore = Number(gradeScore)
     if (!Number.isFinite(numericScore) || numericScore < 0 || numericScore > 100) {
       setError("La note doit être comprise entre 0 et 100.")
@@ -323,20 +435,20 @@ export default function WorkPage() {
       await updateDoc(doc(db, "submissions", selectedWork.id), {
         status: "graded",
         score: numericScore,
-        feedback: gradeFeedback.trim() || null,
+        feedback: formattedFeedback || null,
         graded_at: now,
         graded_by: context.userId,
         submitted_at: selectedWork.submittedAtRaw || now,
         updated_at: serverTimestamp(),
       })
 
-      if (gradeFeedback.trim()) {
+      if (formattedFeedback) {
         await addDoc(collection(db, "teacher_feedback"), {
           school_id: selectedWork.schoolId || context.activeSchoolId,
           class_id: selectedWork.classId,
           teacher_id: context.userId,
           student_id: selectedWork.studentId,
-          feedback: gradeFeedback.trim(),
+          feedback: formattedFeedback,
           created_at: serverTimestamp(),
         })
       }
@@ -354,8 +466,7 @@ export default function WorkPage() {
         if (existingSnapshot.empty) {
           const generated = generatePersonalizedExercises({
             assignmentTitle: selectedWork.title,
-            score: numericScore,
-            feedback: gradeFeedback,
+            improvementsFocus,
             cefrLevel: selectedWork.level,
           })
 
@@ -651,12 +762,26 @@ export default function WorkPage() {
                 <label className="block font-sans text-[13px] font-semibold text-navy tracking-[0.02em] mb-1.5">
                   Retour personnalisé
                 </label>
-                <textarea
-                  value={gradeFeedback}
-                  onChange={(event) => setGradeFeedback(event.target.value)}
-                  placeholder={"Points forts :\n\nÀ améliorer :\n\nConseil concret :"}
-                  className="w-full min-h-[130px] rounded-[10px] border-2 border-gray-mid bg-card px-3.5 py-3 font-sans text-[15px] text-text-dark placeholder:text-text-light outline-none focus:border-navy focus:shadow-[0_0_0_3px_rgba(27,42,74,0.09)]"
-                />
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+                  {FEEDBACK_SECTION_FIELDS.map((section) => (
+                    <div key={section.key} className="rounded-[10px] border-2 border-gray-mid bg-card p-2.5">
+                      <div className="font-sans text-[13px] font-semibold text-navy tracking-[0.02em] mb-1.5">
+                        {section.label}
+                      </div>
+                      <textarea
+                        value={gradeFeedbackSections[section.key]}
+                        onChange={(event) =>
+                          setGradeFeedbackSections((previous) => ({
+                            ...previous,
+                            [section.key]: event.target.value,
+                          }))
+                        }
+                        placeholder={section.placeholder}
+                        className="w-full min-h-[92px] rounded-[8px] border border-gray-light bg-off-white px-3 py-2 font-sans text-[15px] text-text-dark placeholder:text-text-light outline-none focus:border-navy focus:shadow-[0_0_0_3px_rgba(27,42,74,0.09)]"
+                      />
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
 

@@ -28,6 +28,7 @@ export default function ProgressPage() {
     if (key === "quiz") return "Quiz"
     if (key === "reading") return "Lecture"
     if (key === "writing") return "Écriture"
+    if (key === "conjugation") return "Conjugaison"
     if (key === "grammar") return "Grammaire"
     if (key === "exercise" || key === "exercice") return "Exercice"
     if (key === "mixed") return "Mixte"

@@ -81,6 +81,7 @@ function normalizeAssignmentType(type: string | null | undefined) {
   const value = (type || "exercise").toLowerCase()
   const allowed = new Set([
     "quiz",
+    "conjugation",
     "grammar",
     "reading",
     "writing",
@@ -1310,62 +1311,205 @@ export async function fetchStudentExercisesData(db: Firestore, userId: string, s
 
 export function generatePersonalizedExercises(params: {
   assignmentTitle: string
-  score: number
-  feedback: string
+  improvementsFocus?: string
   cefrLevel: string
 }) {
-  const level = normalizeLevel(params.cefrLevel)
-  const score = Math.max(0, Math.min(100, Math.round(params.score)))
-  const feedback = (params.feedback || "").trim()
+  type Theme = "conjugation" | "grammar" | "vocabulary"
+  type TargetLevel = "a1" | "a2" | "b1" | "b2"
 
-  if (score < 60) {
-    return [
-      {
-        title: `Réécriture guidée - ${params.assignmentTitle}`,
-        instructions: `Réécris l'e-mail avec cette structure: objet clair, formule d'ouverture, 3 idées principales, formule de clôture. ${feedback ? `Point d'attention: ${feedback}` : ""}`,
-        exerciseType: "writing",
-        cefrLevel: level,
-      },
-      {
-        title: "Formules professionnelles",
-        instructions: "Transforme 10 phrases informelles en formulations professionnelles adaptées à un e-mail professionnel.",
-        exerciseType: "vocabulary",
-        cefrLevel: level,
-      },
-      {
-        title: "Correction grammaire ciblée",
-        instructions: "Corrige les erreurs de grammaire et de ponctuation dans un mini e-mail (temps verbaux, accords, majuscules, ponctuation).",
-        exerciseType: "grammar",
-        cefrLevel: level,
-      },
-    ]
-  }
-
-  if (score < 80) {
-    return [
-      {
-        title: `Amélioration de style - ${params.assignmentTitle}`,
-        instructions: `Améliore ton e-mail pour le rendre plus précis et plus professionnel (cohérence, transitions, ton). ${feedback ? `Retour enseignant: ${feedback}` : ""}`,
-        exerciseType: "writing",
-        cefrLevel: level,
-      },
-      {
-        title: "Object line & call-to-action",
-        instructions: "Rédige 5 objets d'e-mail efficaces puis ajoute une phrase de call-to-action claire dans chaque e-mail.",
-        exerciseType: "exercise",
-        cefrLevel: level,
-      },
-    ]
-  }
-
-  return [
-    {
-      title: `Version avancée - ${params.assignmentTitle}`,
-      instructions: "Rédige une version plus concise et plus persuasive de ton e-mail, avec un registre professionnel constant.",
-      exerciseType: "writing",
-      cefrLevel: level,
+  const levelSettings: Record<TargetLevel, {
+    label: string
+    conjugationFocus: string
+    grammarFocus: string
+    vocabularyFocus: string
+    conjugationItems: number
+    grammarItems: number
+    vocabularyItems: number
+    reuseSentences: number
+  }> = {
+    a1: {
+      label: "A1",
+      conjugationFocus: "be/have, present simple, formes affirmatives et négatives",
+      grammarFocus: "ordre des mots simple, articles a/an/the, pronoms sujets",
+      vocabularyFocus: "lexique du quotidien (école, travail, routines)",
+      conjugationItems: 8,
+      grammarItems: 8,
+      vocabularyItems: 10,
+      reuseSentences: 4,
     },
-  ]
+    a2: {
+      label: "A2",
+      conjugationFocus: "present simple, present continuous, passé simple fréquent",
+      grammarFocus: "accord sujet-verbe, prépositions de base, questions courtes",
+      vocabularyFocus: "lexique des situations concrètes et expressions utiles",
+      conjugationItems: 10,
+      grammarItems: 10,
+      vocabularyItems: 12,
+      reuseSentences: 5,
+    },
+    b1: {
+      label: "B1",
+      conjugationFocus: "present perfect vs preterit, modaux courants, cohérence des temps",
+      grammarFocus: "structures complexes, connecteurs, relatives simples",
+      vocabularyFocus: "lexique thématique et reformulation en contexte",
+      conjugationItems: 12,
+      grammarItems: 12,
+      vocabularyItems: 14,
+      reuseSentences: 6,
+    },
+    b2: {
+      label: "B2",
+      conjugationFocus: "nuances temporelles, conditionnels, voix passive ciblée",
+      grammarFocus: "grammaire avancée, précision syntaxique, fluidité",
+      vocabularyFocus: "registre précis, collocations, reformulation nuancée",
+      conjugationItems: 14,
+      grammarItems: 14,
+      vocabularyItems: 16,
+      reuseSentences: 7,
+    },
+  }
+
+  const themes: Theme[] = ["conjugation", "grammar", "vocabulary"]
+
+  const keywordMap: Record<Theme, string[]> = {
+    conjugation: [
+      "conjugaison",
+      "temps",
+      "verbe",
+      "verbal",
+      "present",
+      "preterit",
+      "past simple",
+      "present perfect",
+      "future",
+      "conditionnel",
+      "auxiliaire",
+      "infinitif",
+      "participe",
+    ],
+    grammar: [
+      "grammaire",
+      "accord",
+      "article",
+      "preposition",
+      "syntaxe",
+      "structure",
+      "ordre des mots",
+      "pronom",
+      "negation",
+      "comparatif",
+      "superlatif",
+      "ponctuation",
+    ],
+    vocabulary: [
+      "vocabulaire",
+      "lexique",
+      "mot",
+      "mots",
+      "expression",
+      "collocation",
+      "registre",
+      "synonyme",
+      "antonyme",
+      "formulation",
+    ],
+  }
+
+  const toTargetLevel = (value: string): TargetLevel => {
+    const normalized = (value || "b1").trim().toLowerCase()
+    if (normalized === "a1" || normalized === "a2" || normalized === "b1" || normalized === "b2") {
+      return normalized
+    }
+    if (normalized === "c1" || normalized === "c2") return "b2"
+    return "b1"
+  }
+
+  const normalizeForKeywords = (value: string) =>
+    (value || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+
+  const compact = (value: string, max = 220) => {
+    const cleaned = (value || "").replace(/\s+/g, " ").trim()
+    if (cleaned.length <= max) return cleaned
+    return `${cleaned.slice(0, max - 3)}...`
+  }
+
+  const rankThemes = (improvements: string) => {
+    const normalized = normalizeForKeywords(improvements)
+    if (!normalized) return themes
+
+    const scores = new Map<Theme, number>()
+    for (const theme of themes) {
+      let score = 0
+      for (const keyword of keywordMap[theme]) {
+        if (normalized.includes(keyword)) score += 1
+      }
+      scores.set(theme, score)
+    }
+
+    return [...themes].sort((left, right) => {
+      const rightScore = scores.get(right) || 0
+      const leftScore = scores.get(left) || 0
+      if (rightScore !== leftScore) return rightScore - leftScore
+      return themes.indexOf(left) - themes.indexOf(right)
+    })
+  }
+
+  const assignmentTitle = (params.assignmentTitle || "Devoir personnalisé").trim() || "Devoir personnalisé"
+  const level = toTargetLevel(params.cefrLevel)
+  const settings = levelSettings[level]
+  const improvementsFocus = (params.improvementsFocus || "").trim()
+  const hasImprovementsFocus = !!improvementsFocus
+  const prioritizedThemes = rankThemes(improvementsFocus)
+  const focusLine = hasImprovementsFocus
+    ? `Priorité professeur (bloc À améliorer): ${compact(improvementsFocus)}`
+    : "Priorité professeur (bloc À améliorer): vide. Exercices standards par niveau attendu."
+
+  const buildExercise = (theme: Theme) => {
+    if (theme === "conjugation") {
+      return {
+        title: `Conjugaison ciblée (${settings.label}) - ${assignmentTitle}`,
+        instructions: [
+          focusLine,
+          `Niveau attendu: ${settings.label}.`,
+          `Objectif: ${settings.conjugationFocus}.`,
+          `Consigne: complète ${settings.conjugationItems} phrases avec le bon temps puis transforme 3 phrases (affirmative, négative, interrogative).`,
+        ].join("\n"),
+        exerciseType: "conjugation" as const,
+        cefrLevel: level,
+      }
+    }
+
+    if (theme === "grammar") {
+      return {
+        title: `Grammaire ciblée (${settings.label}) - ${assignmentTitle}`,
+        instructions: [
+          focusLine,
+          `Niveau attendu: ${settings.label}.`,
+          `Objectif: ${settings.grammarFocus}.`,
+          `Consigne: corrige ${settings.grammarItems} phrases (accords, structure, ponctuation) puis explique la règle pour 2 corrections.`,
+        ].join("\n"),
+        exerciseType: "grammar" as const,
+        cefrLevel: level,
+      }
+    }
+
+    return {
+      title: `Vocabulaire ciblé (${settings.label}) - ${assignmentTitle}`,
+      instructions: [
+        focusLine,
+        `Niveau attendu: ${settings.label}.`,
+        `Objectif: ${settings.vocabularyFocus}.`,
+        `Consigne: travaille ${settings.vocabularyItems} mots/expressions puis rédige ${settings.reuseSentences} phrases de réemploi en contexte.`,
+      ].join("\n"),
+      exerciseType: "vocabulary" as const,
+      cefrLevel: level,
+    }
+  }
+
+  return prioritizedThemes.map((theme) => buildExercise(theme))
 }
 
 function batchIds(ids: string[], size = 30): string[][] {
