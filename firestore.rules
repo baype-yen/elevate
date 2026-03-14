@@ -76,6 +76,15 @@ service cloud.firestore {
       allow read, write: if isSignedIn();
     }
 
+    // Flashcards
+    match /flashcards/{flashcardId} {
+      allow read: if isSignedIn() && resource.data.student_id == request.auth.uid;
+      allow update: if isSignedIn()
+        && resource.data.student_id == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'reviewed_at']);
+      // Creation and deletion handled server-side via Admin SDK
+    }
+
     // Skills
     match /skills/{skillId} {
       allow read: if isSignedIn();

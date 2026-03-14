@@ -199,6 +199,7 @@ export default function WorkPage() {
   const [gradeScore, setGradeScore] = useState("")
   const [gradeFeedbackSections, setGradeFeedbackSections] = useState<FeedbackSections>(emptyFeedbackSections())
   const [createPersonalized, setCreatePersonalized] = useState(true)
+  const [createFlashcards, setCreateFlashcards] = useState(true)
 
   const [busy, setBusy] = useState(false)
   const [busyDocumentId, setBusyDocumentId] = useState<string | null>(null)
@@ -251,6 +252,7 @@ export default function WorkPage() {
       setGradeScore("")
       setGradeFeedbackSections(emptyFeedbackSections())
       setCreatePersonalized(true)
+      setCreateFlashcards(true)
       return
     }
 
@@ -506,7 +508,35 @@ export default function WorkPage() {
         }
       }
 
-      setSuccess("Correction enregistrée.")
+      if (createFlashcards) {
+        try {
+          const idToken = await (await import("@/lib/firebase/client")).auth.currentUser?.getIdToken()
+          const flashcardResponse = await fetch("/api/teacher/flashcards/generate", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+            },
+            body: JSON.stringify({ submission_id: selectedWork.id }),
+          })
+          const flashcardData = await flashcardResponse.json()
+          if (flashcardResponse.ok) {
+            setSuccess(
+              flashcardData.existing
+                ? "Correction enregistrée. Flashcards déjà générées."
+                : `Correction enregistrée. ${flashcardData.count} flashcard(s) créée(s).`,
+            )
+          } else {
+            setSuccess("Correction enregistrée. Erreur lors de la génération des flashcards.")
+          }
+        } catch {
+          setSuccess("Correction enregistrée. Erreur lors de la génération des flashcards.")
+        }
+      }
+
+      if (!createFlashcards) {
+        setSuccess("Correction enregistrée.")
+      }
       await loadWork()
     } catch (e: any) {
       setError(e.message || "Impossible d'enregistrer la correction.")
@@ -793,6 +823,16 @@ export default function WorkPage() {
                 className="w-[15px] h-[15px] accent-navy"
               />
               Générer automatiquement des exercices personnalisés après correction
+            </label>
+
+            <label className="flex items-center gap-2 font-sans text-sm text-text-dark select-none">
+              <input
+                type="checkbox"
+                checked={createFlashcards}
+                onChange={(event) => setCreateFlashcards(event.target.checked)}
+                className="w-[15px] h-[15px] accent-navy"
+              />
+              Générer des flashcards à partir des erreurs
             </label>
 
             <div className="flex gap-2">

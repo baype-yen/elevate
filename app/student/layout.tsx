@@ -16,6 +16,7 @@ const navItems = [
   { href: "/student/documents", label: "Documents", icon: Icons.FileText },
   { href: "/student/calendar", label: "Calendrier", icon: Icons.Calendar },
   { href: "/student/progress", label: "Progression", icon: Icons.BarChart },
+  { href: "/student/flashcards", label: "Flashcards", icon: Icons.Layers },
 ]
 
 export default function StudentLayout({ children }: { children: React.ReactNode }) {
