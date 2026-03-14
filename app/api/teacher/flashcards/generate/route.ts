@@ -20,18 +20,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Non autorisé." }, { status: 401 })
   }
 
-  // 2. Verify teacher role
-  const membershipSnap = await adminDb.collection("school_memberships")
-    .where("user_id", "==", callerUid)
-    .where("role", "in", ["teacher", "owner", "admin"])
-    .limit(1)
-    .get()
-
-  if (membershipSnap.empty) {
-    return NextResponse.json({ error: "Accès réservé aux enseignants." }, { status: 403 })
-  }
-
-  // 3. Parse body
+  // 2. Parse body
   let body: { submission_id?: string }
   try {
     body = await request.json()
