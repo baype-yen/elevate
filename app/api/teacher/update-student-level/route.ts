@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
-import { createAdminClient } from "@/lib/supabase/admin"
-import { createClient as createServerClient } from "@/lib/supabase/server"
+import { adminAuth, adminDb } from "@/lib/firebase/admin"
+import { FieldValue } from "firebase-admin/firestore"
 
 type UpdateStudentLevelPayload = {
   classId?: string
@@ -12,6 +12,17 @@ const allowedLevels = new Set(["a1", "a2", "b1", "b2", "c1", "c2"])
 
 function badRequest(message: string) {
   return NextResponse.json({ error: message }, { status: 400 })
+}
+
+async function getCallerUid(request: Request): Promise<string | null> {
+  const authorization = request.headers.get("authorization")
+  if (!authorization?.startsWith("Bearer ")) return null
+  try {
+    const decoded = await adminAuth.verifyIdToken(authorization.slice(7))
+    return decoded.uid
+  } catch {
+    return null
+  }
 }
 
 export async function POST(request: Request) {
@@ -35,65 +46,45 @@ export async function POST(request: Request) {
     return badRequest("Niveau CECRL invalide.")
   }
 
-  const supabase = await createServerClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user) {
+  const callerUid = await getCallerUid(request)
+  if (!callerUid) {
     return NextResponse.json({ error: "Non autorisé." }, { status: 401 })
   }
 
-  const { data: classRow, error: classError } = await supabase
-    .from("classes")
-    .select("id, school_id, archived_at")
-    .eq("id", classId)
-    .eq("teacher_id", user.id)
-    .single()
+  const classSnap = await adminDb.collection("classes").doc(classId).get()
+  const classRow = classSnap.exists ? { id: classSnap.id, ...classSnap.data() } as any : null
 
-  if (classError || !classRow) {
+  if (!classRow || classRow.teacher_id !== callerUid) {
     return NextResponse.json({ error: "Classe introuvable ou accès refusé." }, { status: 403 })
   }
 
-  const { data: enrollmentRow, error: enrollmentError } = await supabase
-    .from("class_enrollments")
-    .select("id")
-    .eq("class_id", classId)
-    .eq("student_id", studentId)
-    .eq("status", "active")
-    .maybeSingle()
+  const enrollmentSnap = await adminDb.collection("class_enrollments")
+    .where("class_id", "==", classId)
+    .where("student_id", "==", studentId)
+    .where("status", "==", "active")
+    .limit(1)
+    .get()
 
-  if (enrollmentError || !enrollmentRow) {
+  if (enrollmentSnap.empty) {
     return badRequest("Cet élève n'est pas inscrit activement dans cette classe.")
   }
 
-  let admin: ReturnType<typeof createAdminClient>
-  try {
-    admin = createAdminClient()
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Le client admin Supabase n'est pas configuré."
-    return NextResponse.json({ error: message }, { status: 500 })
-  }
-
-  const { error: profileError } = await admin
-    .from("profiles")
-    .update({ cefr_level: cefrLevel as "a1" | "a2" | "b1" | "b2" | "c1" | "c2" })
-    .eq("id", studentId)
-
-  if (profileError) {
-    return NextResponse.json({ error: "La mise à jour du niveau élève a échoué." }, { status: 500 })
-  }
+  await adminDb.collection("profiles").doc(studentId).update({
+    cefr_level: cefrLevel,
+    updated_at: FieldValue.serverTimestamp(),
+  })
 
   if (classRow.school_id) {
-    await supabase.from("activity_events").insert({
+    await adminDb.collection("activity_events").add({
       school_id: classRow.school_id,
       class_id: classId,
-      actor_id: user.id,
+      actor_id: callerUid,
       target_user_id: studentId,
       event_type: "milestone",
       payload: {
         text: `Niveau CECRL mis à jour vers ${cefrLevel.toUpperCase()}.`,
       },
+      created_at: FieldValue.serverTimestamp(),
     })
   }
 

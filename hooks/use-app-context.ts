@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from "react"
 import { usePathname, useRouter } from "next/navigation"
-import { createClient } from "@/lib/supabase/client"
+import { onAuthStateChanged, getIdTokenResult } from "firebase/auth"
+import { doc, getDoc, getDocs, query, collection, where, updateDoc } from "firebase/firestore"
+import { auth, db } from "@/lib/firebase/client"
 
 export type AppContext = {
   userId: string
@@ -22,85 +24,77 @@ export function useAppContext() {
 
   useEffect(() => {
     let mounted = true
-    const supabase = createClient()
 
-    async function run() {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (!user) {
         if (mounted) {
           setContext(null)
           setLoading(false)
+          const loginPath = pathname.startsWith("/student") ? "/student-login" : "/login"
+          router.replace(loginPath)
         }
         return
       }
 
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("id, full_name, default_role, cefr_level, active_school_id")
-        .eq("id", user.id)
-        .single()
+      const profileSnap = await getDoc(doc(db, "profiles", user.uid))
+      const profile = profileSnap.exists() ? profileSnap.data() : null
 
-      const { data: memberships } = await supabase
-        .from("school_memberships")
-        .select("school_id, role, status, schools(name)")
-        .eq("user_id", user.id)
-        .eq("status", "active")
+      const membershipsQuery = query(
+        collection(db, "school_memberships"),
+        where("user_id", "==", user.uid),
+        where("status", "==", "active"),
+      )
+      const membershipsSnap = await getDocs(membershipsQuery)
+      let memberships = membershipsSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as any[]
 
-      let resolvedMemberships = memberships || []
+      if (!memberships.length && profile?.default_role === "teacher") {
+        try {
+          const { httpsCallable, getFunctions } = await import("firebase/functions")
+          const functions = getFunctions(auth.app, "europe-west1")
+          const bootstrapFn = httpsCallable(functions, "bootstrapDemoWorkspace")
+          await bootstrapFn()
 
-      if (!resolvedMemberships.length && profile?.default_role === "teacher") {
-        await supabase.rpc("bootstrap_demo_workspace")
-        const { data: freshMemberships } = await supabase
-          .from("school_memberships")
-          .select("school_id, role, status, schools(name)")
-          .eq("user_id", user.id)
-          .eq("status", "active")
-        resolvedMemberships = freshMemberships || []
+          const freshSnap = await getDocs(membershipsQuery)
+          memberships = freshSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as any[]
+        } catch {
+          // Cloud Function not deployed yet — continue without demo workspace
+        }
       }
 
-      const firstMembership = resolvedMemberships[0] ?? null
+      const firstMembership = memberships[0] ?? null
       let activeSchoolId = profile?.active_school_id ?? null
 
       if (!activeSchoolId && firstMembership?.school_id) {
         activeSchoolId = firstMembership.school_id
-        await supabase.from("profiles").update({ active_school_id: activeSchoolId }).eq("id", user.id)
+        await updateDoc(doc(db, "profiles", user.uid), { active_school_id: activeSchoolId })
       }
 
       const activeMembership =
-        resolvedMemberships.find((m) => m.school_id === activeSchoolId) ?? firstMembership ?? null
+        memberships.find((m: any) => m.school_id === activeSchoolId) ?? firstMembership ?? null
+
+      let schoolName: string | null = null
+      if (activeMembership?.school_id) {
+        const schoolSnap = await getDoc(doc(db, "schools", activeMembership.school_id))
+        schoolName = schoolSnap.exists() ? schoolSnap.data()?.name || null : null
+      }
 
       if (mounted) {
         setContext({
-          userId: user.id,
+          userId: user.uid,
           fullName: profile?.full_name || user.email || "User",
           defaultRole: (profile?.default_role || "student") as AppContext["defaultRole"],
           cefrLevel: profile?.cefr_level ?? null,
           activeSchoolId,
           membershipRole: (activeMembership?.role as AppContext["membershipRole"]) ?? null,
-          schoolName:
-            ((activeMembership?.schools as { name?: string } | null)?.name ?? null) || null,
+          schoolName,
         })
         setLoading(false)
-      }
-    }
-
-    run()
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!session) {
-        const loginPath = pathname.startsWith("/student") ? "/student-login" : "/login"
-        router.replace(loginPath)
       }
     })
 
     return () => {
       mounted = false
-      subscription.unsubscribe()
+      unsubscribe()
     }
   }, [pathname, router])
 

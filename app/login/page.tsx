@@ -3,9 +3,11 @@
 import Link from "next/link"
 import { useState, type FormEvent } from "react"
 import { useRouter } from "next/navigation"
+import { signInWithEmailAndPassword } from "firebase/auth"
+import { doc, getDoc } from "firebase/firestore"
 import { ElevateButton, InputField } from "@/components/elevate/shared"
 import { Icons } from "@/components/elevate/icons"
-import { createClient } from "@/lib/supabase/client"
+import { auth, db } from "@/lib/firebase/client"
 
 function getSafeTeacherNextPath() {
   if (typeof window === "undefined") return null
@@ -39,36 +41,21 @@ export default function LoginPage() {
     setLoading(true)
     setError(null)
 
-    const supabase = createClient()
-    const { error: signInError } = await supabase.auth.signInWithPassword({
-      email: normalizedEmail,
-      password: trimmedPassword,
-    })
+    try {
+      const credential = await signInWithEmailAndPassword(auth, normalizedEmail, trimmedPassword)
+      const user = credential.user
 
-    if (signInError) {
+      const idToken = await user.getIdToken()
+      document.cookie = `__session=${idToken}; path=/; max-age=${60 * 60 * 24 * 14}; SameSite=Lax`
+
+      const profileSnap = await getDoc(doc(db, "profiles", user.uid))
+      const role = profileSnap.exists() ? profileSnap.data()?.default_role || "student" : "student"
+
+      router.push(role === "teacher" ? getSafeTeacherNextPath() || "/teacher" : "/student")
+    } catch {
       setError("Identifiants invalides. Vérifiez l'e-mail et le mot de passe saisis.")
       setLoading(false)
-      return
     }
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-
-    if (!user) {
-      setError("Impossible de charger votre session de compte.")
-      setLoading(false)
-      return
-    }
-
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("default_role")
-      .eq("id", user.id)
-      .single()
-
-    const role = profile?.default_role || "student"
-    router.push(role === "teacher" ? getSafeTeacherNextPath() || "/teacher" : "/student")
   }
 
   return (

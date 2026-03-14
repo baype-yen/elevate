@@ -4,9 +4,11 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react"
 import { Icons } from "@/components/elevate/icons"
 import { BadgeChooser, ElevateButton, InputField, LevelBadge } from "@/components/elevate/shared"
 import { cn } from "@/lib/utils"
-import { createClient } from "@/lib/supabase/client"
+import { db, storage } from "@/lib/firebase/client"
 import { useAppContext } from "@/hooks/use-app-context"
-import { fetchTeacherWorkData, generatePersonalizedExercises } from "@/lib/supabase/client-data"
+import { fetchTeacherWorkData, generatePersonalizedExercises } from "@/lib/firebase/client-data"
+import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage"
+import { collection, addDoc, updateDoc, doc, getDocs, query, where, limit as firestoreLimit, deleteDoc, serverTimestamp } from "firebase/firestore"
 
 type WorkItem = {
   id: string
@@ -72,11 +74,6 @@ function normalizeFileName(name: string) {
   return cleaned || "document"
 }
 
-function isMissingPersonalizedExercisesTableError(error: any) {
-  const message = String(error?.message || "").toLowerCase()
-  return error?.code === "PGRST205" || (message.includes("personalized_exercises") && message.includes("could not find the table"))
-}
-
 export default function WorkPage() {
   const [filter, setFilter] = useState<string | string[]>("all")
   const [selectedClass, setSelectedClass] = useState<string | string[]>("all")
@@ -105,9 +102,8 @@ export default function WorkPage() {
   const loadWork = async () => {
     if (!context) return
 
-    const supabase = createClient()
     const result = await fetchTeacherWorkData(
-      supabase,
+      db,
       context.userId,
       context.activeSchoolId,
       selectedClass === "all" ? null : String(selectedClass),
@@ -162,16 +158,20 @@ export default function WorkPage() {
       setError(null)
       setBusyDocumentId(document.id)
 
-      const supabase = createClient()
-      const { data: signed, error: signedError } = await supabase.storage
-        .from("documents")
-        .createSignedUrl(document.filePath, 60 * 10, download ? { download: document.name } : undefined)
+      const url = await getDownloadURL(ref(storage, document.filePath))
 
-      if (signedError || !signed?.signedUrl) {
-        throw signedError || new Error("Impossible d'ouvrir le document.")
+      if (download) {
+        const a = window.document.createElement("a")
+        a.href = url
+        a.download = document.name
+        a.target = "_blank"
+        a.rel = "noopener noreferrer"
+        window.document.body.appendChild(a)
+        a.click()
+        window.document.body.removeChild(a)
+      } else {
+        window.open(url, "_blank", "noopener,noreferrer")
       }
-
-      window.open(signed.signedUrl, "_blank", "noopener,noreferrer")
     } catch (e: any) {
       setError(e.message || "Impossible d'ouvrir le document.")
     } finally {
@@ -195,26 +195,24 @@ export default function WorkPage() {
       setError(null)
       setSuccess(null)
 
-      const supabase = createClient()
       const dueAt = newAssignmentDueDate ? new Date(`${newAssignmentDueDate}T23:59:59`).toISOString() : null
 
-      const { data: createdAssignment, error: insertError } = await supabase
-        .from("assignments")
-        .insert({
-          school_id: context.activeSchoolId,
-          class_id: newAssignmentClassId,
-          created_by: context.userId,
-          title: newAssignmentTitle.trim(),
-          description: "Rédigez un e-mail professionnel en appliquant la structure vue en classe.",
-          type: "writing",
-          cefr_level: newAssignmentLevel.toLowerCase(),
-          due_at: dueAt,
-          is_published: true,
-        })
-        .select("id, title")
-        .single()
+      const assignmentDocRef = await addDoc(collection(db, "assignments"), {
+        school_id: context.activeSchoolId,
+        class_id: newAssignmentClassId,
+        created_by: context.userId,
+        title: newAssignmentTitle.trim(),
+        description: "Rédigez un e-mail professionnel en appliquant la structure vue en classe.",
+        type: "writing",
+        cefr_level: newAssignmentLevel.toLowerCase(),
+        due_at: dueAt,
+        is_published: true,
+        created_at: serverTimestamp(),
+        updated_at: serverTimestamp(),
+      })
 
-      if (insertError || !createdAssignment) throw insertError || new Error("Impossible de créer le devoir.")
+      const createdAssignmentId = assignmentDocRef.id
+      const createdAssignmentTitle = newAssignmentTitle.trim()
 
       let fileAttached = false
 
@@ -230,65 +228,58 @@ export default function WorkPage() {
         const baseName = lastDot >= 0 ? file.name.slice(0, lastDot) : file.name
         const normalizedBase = normalizeFileName(baseName)
         const token = Math.random().toString(36).slice(2, 8)
-        const filePath = `${schoolId}/${context.userId}/assignment-${createdAssignment.id}-${Date.now()}-${token}-${normalizedBase}${extension ? `.${extension}` : ""}`
+        const filePath = `documents/${context.userId}/assignment-${createdAssignmentId}-${Date.now()}-${token}-${normalizedBase}${extension ? `.${extension}` : ""}`
 
-        const { data: createdDocument, error: createDocumentError } = await supabase
-          .from("documents")
-          .insert({
-            school_id: schoolId,
-            owner_id: context.userId,
-            name: file.name,
-            file_path: filePath,
-            mime_type: file.type || null,
-            size_bytes: file.size,
-          })
-          .select("id")
-          .single()
+        const documentDocRef = await addDoc(collection(db, "documents"), {
+          school_id: schoolId,
+          owner_id: context.userId,
+          name: file.name,
+          file_path: filePath,
+          mime_type: file.type || null,
+          size_bytes: file.size,
+          created_at: serverTimestamp(),
+          updated_at: serverTimestamp(),
+        })
 
-        if (createDocumentError || !createdDocument) {
-          throw createDocumentError || new Error("Le devoir a été créé, mais le document n'a pas pu être enregistré.")
-        }
+        const createdDocumentId = documentDocRef.id
 
-        const { error: uploadError } = await supabase.storage
-          .from("documents")
-          .upload(filePath, file, {
+        try {
+          await uploadBytes(ref(storage, filePath), file, {
             contentType: file.type || undefined,
-            upsert: false,
           })
-
-        if (uploadError) {
-          await supabase.from("documents").delete().eq("id", createdDocument.id)
+        } catch {
+          await deleteDoc(doc(db, "documents", createdDocumentId))
           throw new Error("Le devoir a été créé, mais le téléversement du document a échoué.")
         }
 
-        const { error: shareError } = await supabase
-          .from("document_shares")
-          .insert({
-            document_id: createdDocument.id,
+        try {
+          await addDoc(collection(db, "document_shares"), {
+            document_id: createdDocumentId,
             school_id: schoolId,
-            assignment_id: createdAssignment.id,
+            assignment_id: createdAssignmentId,
             shared_by: context.userId,
+            created_at: serverTimestamp(),
           })
-
-        if (shareError) {
-          await supabase.storage.from("documents").remove([filePath])
-          await supabase.from("documents").delete().eq("id", createdDocument.id)
+        } catch {
+          await deleteObject(ref(storage, filePath))
+          await deleteDoc(doc(db, "documents", createdDocumentId))
           throw new Error("Le devoir a été créé, mais le document n'a pas pu être partagé avec les élèves.")
         }
 
         fileAttached = true
       }
 
-      await supabase.from("activity_events").insert({
+      await addDoc(collection(db, "activity_events"), {
         school_id: context.activeSchoolId,
         class_id: newAssignmentClassId,
         actor_id: context.userId,
         event_type: "assignment_created",
         payload: {
           text: fileAttached
-            ? `Nouveau devoir créé avec document : ${newAssignmentTitle.trim()}`
-            : `Nouveau devoir créé : ${newAssignmentTitle.trim()}`,
+            ? `Nouveau devoir créé avec document : ${createdAssignmentTitle}`
+            : `Nouveau devoir créé : ${createdAssignmentTitle}`,
         },
+        created_at: serverTimestamp(),
       })
 
       setNewAssignmentFile(null)
@@ -327,52 +318,40 @@ export default function WorkPage() {
       setError(null)
       setSuccess(null)
 
-      const supabase = createClient()
       const now = new Date().toISOString()
 
-      const { error: updateError } = await supabase
-        .from("submissions")
-        .update({
-          status: "graded",
-          score: numericScore,
-          feedback: gradeFeedback.trim() || null,
-          graded_at: now,
-          graded_by: context.userId,
-          submitted_at: selectedWork.submittedAtRaw || now,
-        })
-        .eq("id", selectedWork.id)
-
-      if (updateError) throw updateError
+      await updateDoc(doc(db, "submissions", selectedWork.id), {
+        status: "graded",
+        score: numericScore,
+        feedback: gradeFeedback.trim() || null,
+        graded_at: now,
+        graded_by: context.userId,
+        submitted_at: selectedWork.submittedAtRaw || now,
+        updated_at: serverTimestamp(),
+      })
 
       if (gradeFeedback.trim()) {
-        await supabase.from("teacher_feedback").insert({
+        await addDoc(collection(db, "teacher_feedback"), {
           school_id: selectedWork.schoolId || context.activeSchoolId,
           class_id: selectedWork.classId,
           teacher_id: context.userId,
           student_id: selectedWork.studentId,
           feedback: gradeFeedback.trim(),
+          created_at: serverTimestamp(),
         })
       }
 
-      let personalizedTableMissing = false
-
       if (createPersonalized) {
-        const { data: existingExercises, error: existingExercisesError } = await supabase
-          .from("personalized_exercises")
-          .select("id")
-          .eq("source_submission_id", selectedWork.id)
-          .eq("student_id", selectedWork.studentId)
-          .limit(1)
+        const existingSnapshot = await getDocs(
+          query(
+            collection(db, "personalized_exercises"),
+            where("source_submission_id", "==", selectedWork.id),
+            where("student_id", "==", selectedWork.studentId),
+            firestoreLimit(1),
+          ),
+        )
 
-        if (existingExercisesError) {
-          if (isMissingPersonalizedExercisesTableError(existingExercisesError)) {
-            personalizedTableMissing = true
-          } else {
-            throw existingExercisesError
-          }
-        }
-
-        if (!personalizedTableMissing && !(existingExercises || []).length) {
+        if (existingSnapshot.empty) {
           const generated = generatePersonalizedExercises({
             assignmentTitle: selectedWork.title,
             score: numericScore,
@@ -393,37 +372,30 @@ export default function WorkPage() {
               cefr_level: item.cefrLevel,
             }))
 
-            const { error: insertPersonalizedError } = await supabase
-              .from("personalized_exercises")
-              .insert(rows)
-
-            if (insertPersonalizedError) {
-              if (isMissingPersonalizedExercisesTableError(insertPersonalizedError)) {
-                personalizedTableMissing = true
-              } else {
-                throw insertPersonalizedError
-              }
-            } else {
-              await supabase.from("activity_events").insert({
-                school_id: selectedWork.schoolId || context.activeSchoolId,
-                class_id: selectedWork.classId,
-                actor_id: context.userId,
-                target_user_id: selectedWork.studentId,
-                event_type: "assignment_created",
-                payload: {
-                  text: "Un exercice personnalisé a été ajouté après correction.",
-                },
+            for (const row of rows) {
+              await addDoc(collection(db, "personalized_exercises"), {
+                ...row,
+                created_at: serverTimestamp(),
+                updated_at: serverTimestamp(),
               })
             }
+
+            await addDoc(collection(db, "activity_events"), {
+              school_id: selectedWork.schoolId || context.activeSchoolId,
+              class_id: selectedWork.classId,
+              actor_id: context.userId,
+              target_user_id: selectedWork.studentId,
+              event_type: "assignment_created",
+              payload: {
+                text: "Un exercice personnalisé a été ajouté après correction.",
+              },
+              created_at: serverTimestamp(),
+            })
           }
         }
       }
 
-      setSuccess(
-        personalizedTableMissing
-          ? "Correction enregistrée. Les exercices personnalisés seront visibles dans l'espace élève (mode simplifié)."
-          : "Correction enregistrée.",
-      )
+      setSuccess("Correction enregistrée.")
       await loadWork()
     } catch (e: any) {
       setError(e.message || "Impossible d'enregistrer la correction.")

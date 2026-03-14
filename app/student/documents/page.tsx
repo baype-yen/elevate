@@ -3,9 +3,10 @@
 import { useEffect, useState } from "react"
 import { Icons } from "@/components/elevate/icons"
 import { cn } from "@/lib/utils"
-import { createClient } from "@/lib/supabase/client"
+import { db, storage } from "@/lib/firebase/client"
 import { useAppContext } from "@/hooks/use-app-context"
-import { fetchStudentDocumentsData } from "@/lib/supabase/client-data"
+import { fetchStudentDocumentsData } from "@/lib/firebase/client-data"
+import { ref, getDownloadURL } from "firebase/storage"
 
 type StudentDocumentRow = {
   id: string
@@ -27,8 +28,7 @@ export default function StudentDocumentsPage() {
 
   useEffect(() => {
     if (!context) return
-    const supabase = createClient()
-    fetchStudentDocumentsData(supabase, context.userId, context.activeSchoolId).then(setDocuments)
+    fetchStudentDocumentsData(db, context.userId, context.activeSchoolId).then(setDocuments)
   }, [context])
 
   const openDocument = async (document: StudentDocumentRow, download = false) => {
@@ -36,16 +36,19 @@ export default function StudentDocumentsPage() {
       setError(null)
       setBusyDocumentId(document.id)
 
-      const supabase = createClient()
-      const { data, error: signedUrlError } = await supabase.storage
-        .from("documents")
-        .createSignedUrl(document.filePath, 60 * 10, download ? { download: document.name } : undefined)
+      const storageRef = ref(storage, document.filePath)
+      const url = await getDownloadURL(storageRef)
 
-      if (signedUrlError || !data?.signedUrl) {
-        throw signedUrlError || new Error("Impossible d'ouvrir le document.")
+      if (download) {
+        const a = window.document.createElement("a")
+        a.href = url
+        a.download = document.name
+        a.target = "_blank"
+        a.rel = "noopener noreferrer"
+        a.click()
+      } else {
+        window.open(url, "_blank", "noopener,noreferrer")
       }
-
-      window.open(data.signedUrl, "_blank", "noopener,noreferrer")
     } catch (e: any) {
       setError(e.message || "Impossible d'ouvrir le document.")
     } finally {

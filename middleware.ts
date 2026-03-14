@@ -1,4 +1,3 @@
-import { createServerClient } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"
 
 function isTeacherPath(pathname: string) {
@@ -18,46 +17,23 @@ function isAuthPath(pathname: string) {
 }
 
 export async function middleware(request: NextRequest) {
-  let response = NextResponse.next({ request })
-
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll()
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => request.cookies.set(name, value))
-          response = NextResponse.next({ request })
-          cookiesToSet.forEach(({ name, value, options }) => response.cookies.set(name, value, options))
-        },
-      },
-    },
-  )
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
   const { pathname } = request.nextUrl
+  const session = request.cookies.get("__session")?.value
 
-  if (!user && isProtectedPath(pathname)) {
+  if (!session && isProtectedPath(pathname)) {
     const url = request.nextUrl.clone()
     url.pathname = isStudentPath(pathname) ? "/student-login" : "/login"
     url.searchParams.set("next", pathname)
     return NextResponse.redirect(url)
   }
 
-  if (user && isAuthPath(pathname)) {
+  if (session && isAuthPath(pathname)) {
     const url = request.nextUrl.clone()
-    const role = user.user_metadata?.role
-    url.pathname = role === "teacher" ? "/teacher" : "/student"
+    url.pathname = "/teacher"
     return NextResponse.redirect(url)
   }
 
-  return response
+  return NextResponse.next()
 }
 
 export const config = {

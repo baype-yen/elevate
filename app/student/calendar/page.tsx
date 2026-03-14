@@ -4,9 +4,9 @@ import { useEffect, useMemo, useState } from "react"
 import { Icons } from "@/components/elevate/icons"
 import { ElevateButton } from "@/components/elevate/shared"
 import { cn } from "@/lib/utils"
-import { createClient } from "@/lib/supabase/client"
+import { db } from "@/lib/firebase/client"
 import { useAppContext } from "@/hooks/use-app-context"
-import { fetchStudentCalendarData } from "@/lib/supabase/client-data"
+import { fetchStudentCalendarData } from "@/lib/firebase/client-data"
 
 export default function CalendarPage() {
   const { context, loading } = useAppContext()
@@ -18,10 +18,9 @@ export default function CalendarPage() {
 
   useEffect(() => {
     if (!context) return
-    const supabase = createClient()
     const start = new Date(month.getFullYear(), month.getMonth(), 1)
     const end = new Date(month.getFullYear(), month.getMonth() + 1, 0)
-    fetchStudentCalendarData(supabase, context.userId, start, end).then(setExerciseData)
+    fetchStudentCalendarData(db, context.userId, start, end).then(setExerciseData)
   }, [context, month])
 
   const daysInMonth = useMemo(() => new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate(), [month])

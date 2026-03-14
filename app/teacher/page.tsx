@@ -4,9 +4,9 @@ import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Icons } from "@/components/elevate/icons"
 import { StatCard, ProgressBar, LevelBadge, ElevateButton, InputField, RadioCardChooser } from "@/components/elevate/shared"
-import { createClient } from "@/lib/supabase/client"
+import { db } from "@/lib/firebase/client"
 import { useAppContext } from "@/hooks/use-app-context"
-import { createTeacherClass, fetchTeacherDashboardData } from "@/lib/supabase/client-data"
+import { createTeacherClass, fetchTeacherDashboardData } from "@/lib/firebase/client-data"
 
 const colorToBg: Record<string, string> = {
   a1: "bg-violet",
@@ -44,8 +44,7 @@ export default function TeacherDashboard() {
 
   const load = async () => {
     if (!context) return
-    const supabase = createClient()
-    const nextData = await fetchTeacherDashboardData(supabase, context.userId, context.activeSchoolId)
+    const nextData = await fetchTeacherDashboardData(db, context.userId, context.activeSchoolId)
     setData(nextData)
   }
 
@@ -64,7 +63,7 @@ export default function TeacherDashboard() {
     try {
       setNewClassLoading(true)
       setNewClassError(null)
-      const classId = await createTeacherClass(createClient(), context.userId, context.activeSchoolId, {
+      const classId = await createTeacherClass(db, context.userId, context.activeSchoolId, {
         name: newClassName,
         level: newClassLevel,
       })

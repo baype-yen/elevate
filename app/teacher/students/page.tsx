@@ -4,9 +4,10 @@ import { useEffect, useMemo, useState } from "react"
 import { Icons } from "@/components/elevate/icons"
 import { BadgeChooser, ElevateButton, InputField, LevelBadge } from "@/components/elevate/shared"
 import { cn } from "@/lib/utils"
-import { createClient } from "@/lib/supabase/client"
+import { db, auth } from "@/lib/firebase/client"
+import { collection, query, where, orderBy, getDocs } from "firebase/firestore"
 import { useAppContext } from "@/hooks/use-app-context"
-import { fetchTeacherStudentsData, type TeacherStudentRow, type TeacherStudentsData } from "@/lib/supabase/client-data"
+import { fetchTeacherStudentsData, type TeacherStudentRow, type TeacherStudentsData } from "@/lib/firebase/client-data"
 
 const avatarColors = ["bg-abricot", "bg-violet", "bg-watermelon", "bg-navy"]
 const cefrLevels = ["A1", "A2", "B1", "B2", "C1", "C2"] as const
@@ -117,9 +118,8 @@ export default function StudentsPage() {
 
   const loadStudents = async () => {
     if (!context) return
-    const supabase = createClient()
     const nextData = await fetchTeacherStudentsData(
-      supabase,
+      db,
       context.userId,
       context.activeSchoolId,
       selectedClass === "all" ? null : String(selectedClass),
@@ -168,25 +168,28 @@ export default function StudentsPage() {
     }
 
     let active = true
-    const supabase = createClient()
 
     async function loadRosterCandidates() {
-      const { data: rosterRows } = await supabase
-        .from("class_students")
-        .select("id, first_name, last_name, sort_order")
-        .eq("class_id", enrollClassId)
-        .order("sort_order", { ascending: true })
-        .order("last_name", { ascending: true })
-        .order("first_name", { ascending: true })
+      const q = query(
+        collection(db, "class_students"),
+        where("class_id", "==", enrollClassId),
+        orderBy("sort_order", "asc"),
+        orderBy("last_name", "asc"),
+        orderBy("first_name", "asc"),
+      )
+      const snapshot = await getDocs(q)
 
       if (!active) return
 
       setRosterCandidates(
-        (rosterRows || []).map((row) => ({
-          id: row.id,
-          firstName: row.first_name,
-          lastName: row.last_name,
-        })),
+        snapshot.docs.map((d) => {
+          const row = d.data()
+          return {
+            id: d.id,
+            firstName: row.first_name,
+            lastName: row.last_name,
+          }
+        }),
       )
     }
 
@@ -261,10 +264,12 @@ export default function StudentsPage() {
     password: string
     classId: string
   }) => {
+    const idToken = await auth.currentUser?.getIdToken()
     const response = await fetch("/api/teacher/enroll-student", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
       },
       body: JSON.stringify(input),
     })
@@ -360,10 +365,12 @@ export default function StudentsPage() {
       setLevelError(null)
       setLevelSuccess(null)
 
+      const idToken = await auth.currentUser?.getIdToken()
       const response = await fetch("/api/teacher/update-student-level", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
         },
         body: JSON.stringify({
           classId: student.classId,

@@ -1,0 +1,130 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Profiles
+    match /profiles/{userId} {
+      allow read: if isSignedIn();
+      allow write: if isOwner(userId);
+    }
+
+    // Schools
+    match /schools/{schoolId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn();
+    }
+
+    // School memberships
+    match /school_memberships/{membershipId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn();
+    }
+
+    // Classes
+    match /classes/{classId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.teacher_id == request.auth.uid;
+      allow update, delete: if isSignedIn();
+    }
+
+    // Class enrollments
+    match /class_enrollments/{enrollmentId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // Class students (roster)
+    match /class_students/{studentId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // Assignments
+    match /assignments/{assignmentId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if isSignedIn();
+    }
+
+    // Submissions
+    match /submissions/{submissionId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // Documents
+    match /documents/{documentId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if isSignedIn();
+    }
+
+    // Document shares
+    match /document_shares/{shareId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // Personalized exercises
+    match /personalized_exercises/{exerciseId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // Skills
+    match /skills/{skillId} {
+      allow read: if isSignedIn();
+    }
+
+    // Student skill scores
+    match /student_skill_scores/{scoreId} {
+      allow read: if isSignedIn();
+    }
+
+    // Activity events
+    match /activity_events/{eventId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+    }
+
+    // Badges
+    match /badges/{badgeId} {
+      allow read: if isSignedIn();
+    }
+
+    // User badges
+    match /user_badges/{userBadgeId} {
+      allow read: if isSignedIn();
+    }
+
+    // User XP events
+    match /user_xp_events/{xpEventId} {
+      allow read: if isSignedIn();
+    }
+
+    // Teacher feedback
+    match /teacher_feedback/{feedbackId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // Score history
+    match /score_history/{historyId} {
+      allow read: if isSignedIn();
+    }
+
+    // Practice daily
+    match /practice_daily/{dailyId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // Lessons
+    match /lessons/{lessonId} {
+      allow read, write: if isSignedIn();
+    }
+  }
+}

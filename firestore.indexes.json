@@ -1,0 +1,266 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "classes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "teacher_id", "order": "ASCENDING" },
+        { "fieldPath": "school_id", "order": "ASCENDING" },
+        { "fieldPath": "archived_at", "order": "ASCENDING" },
+        { "fieldPath": "created_at", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "classes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "school_id", "order": "ASCENDING" },
+        { "fieldPath": "teacher_id", "order": "ASCENDING" },
+        { "fieldPath": "created_at", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "classes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "teacher_id", "order": "ASCENDING" },
+        { "fieldPath": "archived_at", "order": "ASCENDING" },
+        { "fieldPath": "school_id", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "classes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "teacher_id", "order": "ASCENDING" },
+        { "fieldPath": "school_id", "order": "ASCENDING" },
+        { "fieldPath": "archived_at", "order": "ASCENDING" },
+        { "fieldPath": "name", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "classes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "archived_at", "order": "ASCENDING" },
+        { "fieldPath": "school_id", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "class_enrollments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "student_id", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "class_enrollments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "class_id", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "class_enrollments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "class_id", "order": "ASCENDING" },
+        { "fieldPath": "student_id", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "assignments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "class_id", "order": "ASCENDING" },
+        { "fieldPath": "created_at", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "assignments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "class_id", "order": "ASCENDING" },
+        { "fieldPath": "due_at", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "assignments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "class_id", "order": "ASCENDING" },
+        { "fieldPath": "is_published", "order": "ASCENDING" },
+        { "fieldPath": "due_at", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "assignments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "class_id", "order": "ASCENDING" },
+        { "fieldPath": "school_id", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "submissions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "assignment_id", "order": "ASCENDING" },
+        { "fieldPath": "submitted_at", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "submissions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "student_id", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "graded_at", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "submissions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "student_id", "order": "ASCENDING" },
+        { "fieldPath": "assignment_id", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "documents",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "owner_id", "order": "ASCENDING" },
+        { "fieldPath": "school_id", "order": "ASCENDING" },
+        { "fieldPath": "created_at", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "document_shares",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "school_id", "order": "ASCENDING" },
+        { "fieldPath": "document_id", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "document_shares",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "school_id", "order": "ASCENDING" },
+        { "fieldPath": "class_id", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "document_shares",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "school_id", "order": "ASCENDING" },
+        { "fieldPath": "assignment_id", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "activity_events",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "school_id", "order": "ASCENDING" },
+        { "fieldPath": "created_at", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "activity_events",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "actor_id", "order": "ASCENDING" },
+        { "fieldPath": "school_id", "order": "ASCENDING" },
+        { "fieldPath": "created_at", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "personalized_exercises",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "student_id", "order": "ASCENDING" },
+        { "fieldPath": "created_at", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "personalized_exercises",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "student_id", "order": "ASCENDING" },
+        { "fieldPath": "school_id", "order": "ASCENDING" },
+        { "fieldPath": "created_at", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "personalized_exercises",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "source_submission_id", "order": "ASCENDING" },
+        { "fieldPath": "student_id", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "student_skill_scores",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "user_id", "order": "ASCENDING" },
+        { "fieldPath": "as_of_date", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "score_history",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "user_id", "order": "ASCENDING" },
+        { "fieldPath": "month_date", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "score_history",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "user_id", "order": "ASCENDING" },
+        { "fieldPath": "month_date", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "teacher_feedback",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "student_id", "order": "ASCENDING" },
+        { "fieldPath": "created_at", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "class_students",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "class_id", "order": "ASCENDING" },
+        { "fieldPath": "sort_order", "order": "ASCENDING" },
+        { "fieldPath": "last_name", "order": "ASCENDING" },
+        { "fieldPath": "first_name", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "class_students",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "class_id", "order": "ASCENDING" },
+        { "fieldPath": "sort_order", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "practice_daily",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "user_id", "order": "ASCENDING" },
+        { "fieldPath": "practice_date", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

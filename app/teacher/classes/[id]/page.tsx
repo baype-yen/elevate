@@ -5,7 +5,7 @@ import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
 import { Icons } from "@/components/elevate/icons"
 import { ElevateButton, InputField, LevelBadge } from "@/components/elevate/shared"
-import { createClient } from "@/lib/supabase/client"
+import { db } from "@/lib/firebase/client"
 import {
   addClassRosterStudent,
   archiveTeacherClass,
@@ -13,7 +13,7 @@ import {
   importClassRosterRows,
   removeClassRosterStudent,
   unarchiveTeacherClass,
-} from "@/lib/supabase/client-data"
+} from "@/lib/firebase/client-data"
 import { useAppContext } from "@/hooks/use-app-context"
 
 function levelColor(level: string) {
@@ -155,11 +155,9 @@ export default function TeacherClassDetailPage() {
   const [city, setCity] = useState("")
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
-  const supabase = createClient()
-
   const load = async () => {
     if (!classId) return
-    const result = await fetchTeacherClassDetail(supabase, classId)
+    const result = await fetchTeacherClassDetail(db, classId)
     setData(result)
   }
 
@@ -181,8 +179,8 @@ export default function TeacherClassDetailPage() {
       setBusy(true)
       setError(null)
       setSuccess(null)
-      if (data.classItem.archivedAt) await unarchiveTeacherClass(supabase, data.classItem.id)
-      else await archiveTeacherClass(supabase, data.classItem.id)
+      if (data.classItem.archivedAt) await unarchiveTeacherClass(db, data.classItem.id)
+      else await archiveTeacherClass(db, data.classItem.id)
       await load()
     } catch (e: any) {
       setError(e.message || "Impossible de mettre à jour le statut de la classe.")
@@ -196,7 +194,7 @@ export default function TeacherClassDetailPage() {
       setBusy(true)
       setError(null)
       setSuccess(null)
-      await addClassRosterStudent(supabase, classId, {
+      await addClassRosterStudent(db, classId, {
         firstName,
         lastName,
         company,
@@ -220,7 +218,7 @@ export default function TeacherClassDetailPage() {
       setBusy(true)
       setError(null)
       setSuccess(null)
-      await removeClassRosterStudent(supabase, rosterId)
+      await removeClassRosterStudent(db, rosterId)
       await load()
       setSuccess("Élève retiré de la liste.")
     } catch (e: any) {
@@ -252,7 +250,7 @@ export default function TeacherClassDetailPage() {
         return
       }
 
-      const inserted = await importClassRosterRows(supabase, classId, parsedRows)
+      const inserted = await importClassRosterRows(db, classId, parsedRows)
       await load()
       setSuccess(`${inserted} lignes importées depuis le CSV.`)
     } catch (e: any) {

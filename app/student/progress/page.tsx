@@ -4,9 +4,9 @@ import { useEffect, useState } from "react"
 import { Icons } from "@/components/elevate/icons"
 import { ElevateButton, BadgeChooser } from "@/components/elevate/shared"
 import { cn } from "@/lib/utils"
-import { createClient } from "@/lib/supabase/client"
+import { db } from "@/lib/firebase/client"
 import { useAppContext } from "@/hooks/use-app-context"
-import { fetchStudentProgressData } from "@/lib/supabase/client-data"
+import { fetchStudentProgressData } from "@/lib/firebase/client-data"
 
 export default function ProgressPage() {
   const { context, loading } = useAppContext()
@@ -14,8 +14,7 @@ export default function ProgressPage() {
 
   useEffect(() => {
     if (!context) return
-    const supabase = createClient()
-    fetchStudentProgressData(supabase, context.userId).then(setData)
+    fetchStudentProgressData(db, context.userId).then(setData)
   }, [context])
 
   if (loading || !data) {
@@ -42,7 +41,7 @@ export default function ProgressPage() {
           <span className="text-[32px]">{"📊"}</span>
           <div>
             <h3 className="font-serif text-xl font-bold text-white mb-0.5">Mon rapport de progression</h3>
-            <p className="font-sans text-xs text-gray-mid">Mis à jour depuis vos dernières données Supabase</p>
+            <p className="font-sans text-xs text-gray-mid">Mis à jour depuis vos dernières données</p>
           </div>
         </div>
         <ElevateButton variant="secondary" size="sm" icon={<Icons.Download />}>Exporter en PDF</ElevateButton>

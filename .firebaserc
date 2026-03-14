@@ -1,0 +1,8 @@
+{
+  "projects": {
+    "default": "elevate-app",
+    "prod": "elevate-7a91f"
+  },
+  "targets": {},
+  "etags": {}
+}

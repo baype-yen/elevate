@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Icons } from "@/components/elevate/icons"
 import { BadgeChooser, ElevateButton, InputField, LevelBadge, RadioCardChooser } from "@/components/elevate/shared"
-import { createClient } from "@/lib/supabase/client"
+import { db } from "@/lib/firebase/client"
 import {
   archiveTeacherClass,
   createTeacherClass,
@@ -12,7 +12,7 @@ import {
   type TeacherClassSummary,
   unarchiveTeacherClass,
   updateTeacherClass,
-} from "@/lib/supabase/client-data"
+} from "@/lib/firebase/client-data"
 import { useAppContext } from "@/hooks/use-app-context"
 
 const levelColor: Record<string, string> = {
@@ -43,11 +43,9 @@ export default function TeacherClassesPage() {
   const [editingLevel, setEditingLevel] = useState("b1")
   const [editingYear, setEditingYear] = useState("")
 
-  const supabase = createClient()
-
   const loadClasses = async () => {
     if (!context) return
-    const rows = await fetchTeacherClassesData(supabase, context.userId, context.activeSchoolId, true)
+    const rows = await fetchTeacherClassesData(db, context.userId, context.activeSchoolId, true)
     setClasses(rows)
   }
 
@@ -86,7 +84,7 @@ export default function TeacherClassesPage() {
     try {
       setBusy(true)
       setError(null)
-      const classId = await createTeacherClass(supabase, context.userId, context.activeSchoolId, {
+      const classId = await createTeacherClass(db, context.userId, context.activeSchoolId, {
         name: newClassName,
         level: newClassLevel,
         academicYear: newClassYear,
@@ -116,7 +114,7 @@ export default function TeacherClassesPage() {
     try {
       setBusy(true)
       setError(null)
-      await updateTeacherClass(supabase, editingClassId, {
+      await updateTeacherClass(db, editingClassId, {
         name: editingName,
         level: editingLevel,
         academicYear: editingYear,
@@ -135,9 +133,9 @@ export default function TeacherClassesPage() {
       setBusy(true)
       setError(null)
       if (classItem.archivedAt) {
-        await unarchiveTeacherClass(supabase, classItem.id)
+        await unarchiveTeacherClass(db, classItem.id)
       } else {
-        await archiveTeacherClass(supabase, classItem.id)
+        await archiveTeacherClass(db, classItem.id)
       }
       await loadClasses()
     } catch (e: any) {

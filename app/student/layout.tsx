@@ -7,7 +7,8 @@ import { cn } from "@/lib/utils"
 import { Icons } from "@/components/elevate/icons"
 import { LevelBadge } from "@/components/elevate/shared"
 import { useAppContext } from "@/hooks/use-app-context"
-import { createClient } from "@/lib/supabase/client"
+import { signOut } from "firebase/auth"
+import { auth } from "@/lib/firebase/client"
 
 const navItems = [
   { href: "/student", label: "Tableau de bord", icon: Icons.Home },
@@ -29,8 +30,8 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
   }, [loading, context, router])
 
   const onSignOut = async () => {
-    const supabase = createClient()
-    await supabase.auth.signOut()
+    document.cookie = "__session=; path=/; max-age=0"
+    await signOut(auth)
     router.push("/student-login")
   }
 

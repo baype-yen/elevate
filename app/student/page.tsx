@@ -4,9 +4,9 @@ import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Icons } from "@/components/elevate/icons"
 import { StatCard, ProgressBar, LessonCard } from "@/components/elevate/shared"
-import { createClient } from "@/lib/supabase/client"
+import { db } from "@/lib/firebase/client"
 import { useAppContext } from "@/hooks/use-app-context"
-import { fetchStudentDashboardData } from "@/lib/supabase/client-data"
+import { fetchStudentDashboardData } from "@/lib/firebase/client-data"
 
 export default function StudentDashboard() {
   const { context, loading } = useAppContext()
@@ -22,8 +22,7 @@ export default function StudentDashboard() {
 
   useEffect(() => {
     if (!context) return
-    const supabase = createClient()
-    fetchStudentDashboardData(supabase, context.userId, context.activeSchoolId).then(setData)
+    fetchStudentDashboardData(db, context.userId, context.activeSchoolId).then(setData)
   }, [context])
 
   const workTypeLabel = (type: string) => {

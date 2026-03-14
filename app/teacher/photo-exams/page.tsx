@@ -3,9 +3,9 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react"
 import { Icons } from "@/components/elevate/icons"
 import { BadgeChooser, ElevateButton, InputField, LevelBadge } from "@/components/elevate/shared"
-import { createClient } from "@/lib/supabase/client"
+import { db } from "@/lib/firebase/client"
 import { useAppContext } from "@/hooks/use-app-context"
-import { fetchTeacherClassesData, fetchTeacherStudentsData } from "@/lib/supabase/client-data"
+import { fetchTeacherClassesData, fetchTeacherStudentsData } from "@/lib/firebase/client-data"
 import {
   analyzeExamMistakes,
   generateExercisesFromPhotoAnalysis,
@@ -85,11 +85,6 @@ function averageConfidence(pages: OcrPageReport[]) {
   return pages.reduce((sum, page) => sum + page.confidence, 0) / pages.length
 }
 
-function isMissingPersonalizedExercisesTableError(error: any) {
-  const message = String(error?.message || "").toLowerCase()
-  return error?.code === "PGRST205" || (message.includes("personalized_exercises") && message.includes("could not find the table"))
-}
-
 export default function TeacherPhotoExamsPage() {
   const { context, loading } = useAppContext()
   const [classes, setClasses] = useState<ClassOption[]>([])
@@ -114,8 +109,7 @@ export default function TeacherPhotoExamsPage() {
     let active = true
 
     async function loadClasses() {
-      const supabase = createClient()
-      const rows = await fetchTeacherClassesData(supabase, teacherId, activeSchoolId, false)
+      const rows = await fetchTeacherClassesData(db, teacherId, activeSchoolId, false)
       if (!active) return
 
       const nextClasses = rows.map((row) => ({
@@ -151,8 +145,7 @@ export default function TeacherPhotoExamsPage() {
     let active = true
 
     async function loadStudents() {
-      const supabase = createClient()
-      const payload = await fetchTeacherStudentsData(supabase, teacherId, activeSchoolId, selectedClassId)
+      const payload = await fetchTeacherStudentsData(db, teacherId, activeSchoolId, selectedClassId)
       if (!active) return
 
       const nextStudents = payload.students
@@ -399,28 +392,25 @@ export default function TeacherPhotoExamsPage() {
       setAnalysisResult(refreshedResult)
       setOcrDraftText(refreshedResult.extractedText)
 
-      const supabase = createClient()
-      const rows = refreshedResult.exercises.map((exercise) => ({
-        school_id: context.activeSchoolId,
-        class_id: selectedClass.id,
-        student_id: selectedStudent.studentId,
-        created_by: context.userId,
-        title: exercise.title,
-        instructions: exercise.instructions,
-        exercise_type: exercise.exerciseType,
-        cefr_level: exercise.cefrLevel,
-      }))
+      const { collection: col, addDoc, serverTimestamp } = await import("firebase/firestore")
 
-      const { error: insertError } = await supabase.from("personalized_exercises").insert(rows)
-      if (insertError) {
-        if (isMissingPersonalizedExercisesTableError(insertError)) {
-          setSuccess("Correction analysee, mais les exercices personnalises ne sont pas encore disponibles sur cette base.")
-          return
-        }
-        throw insertError
+      for (const exercise of refreshedResult.exercises) {
+        await addDoc(col(db, "personalized_exercises"), {
+          school_id: context.activeSchoolId,
+          class_id: selectedClass.id,
+          student_id: selectedStudent.studentId,
+          created_by: context.userId,
+          title: exercise.title,
+          instructions: exercise.instructions,
+          exercise_type: exercise.exerciseType,
+          cefr_level: exercise.cefrLevel,
+          is_completed: false,
+          created_at: serverTimestamp(),
+          updated_at: serverTimestamp(),
+        })
       }
 
-      await supabase.from("activity_events").insert({
+      await addDoc(col(db, "activity_events"), {
         school_id: context.activeSchoolId,
         class_id: selectedClass.id,
         actor_id: context.userId,
@@ -429,6 +419,7 @@ export default function TeacherPhotoExamsPage() {
         payload: {
           text: `Exercices personnalises generes depuis une copie photo pour ${selectedStudent.name}.`,
         },
+        created_at: serverTimestamp(),
       })
 
       setSuccess("Exercices personnalises crees et envoyes a l'eleve.")

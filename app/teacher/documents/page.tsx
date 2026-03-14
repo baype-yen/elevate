@@ -4,9 +4,11 @@ import { useEffect, useRef, useState, type ChangeEvent } from "react"
 import { Icons } from "@/components/elevate/icons"
 import { BadgeChooser, ElevateButton } from "@/components/elevate/shared"
 import { cn } from "@/lib/utils"
-import { createClient } from "@/lib/supabase/client"
+import { db, storage } from "@/lib/firebase/client"
 import { useAppContext } from "@/hooks/use-app-context"
-import { fetchTeacherDocumentsData } from "@/lib/supabase/client-data"
+import { fetchTeacherDocumentsData } from "@/lib/firebase/client-data"
+import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage"
+import { collection, addDoc, deleteDoc, doc, serverTimestamp } from "firebase/firestore"
 
 type DocumentRow = {
   id: string
@@ -48,8 +50,7 @@ export default function DocumentsPage() {
 
   const loadDocuments = async () => {
     if (!context) return
-    const supabase = createClient()
-    const data = await fetchTeacherDocumentsData(supabase, context.userId, context.activeSchoolId)
+    const data = await fetchTeacherDocumentsData(db, context.userId, context.activeSchoolId)
     setDocuments(data.documents)
     setClasses(data.classes)
     setShareClassIds((previous) => {
@@ -86,60 +87,39 @@ export default function DocumentsPage() {
       setError(null)
       setSuccess(null)
 
-      const supabase = createClient()
       const lastDot = file.name.lastIndexOf(".")
       const extension = lastDot >= 0 ? file.name.slice(lastDot + 1).toLowerCase() : ""
       const baseName = lastDot >= 0 ? file.name.slice(0, lastDot) : file.name
       const normalizedBase = normalizeFileName(baseName)
       const token = Math.random().toString(36).slice(2, 8)
-      const filePath = `${context.activeSchoolId || "personal"}/${context.userId}/${Date.now()}-${token}-${normalizedBase}${extension ? `.${extension}` : ""}`
+      const filePath = `documents/${context.userId}/${Date.now()}-${token}-${normalizedBase}${extension ? `.${extension}` : ""}`
 
-      const { data: createdDocument, error: createDocumentError } = await supabase
-        .from("documents")
-        .insert({
-          school_id: context.activeSchoolId,
-          owner_id: context.userId,
-          name: file.name,
-          file_path: filePath,
-          mime_type: file.type || null,
-          size_bytes: file.size,
-        })
-        .select("id")
-        .single()
+      const storageRef = ref(storage, filePath)
+      await uploadBytes(storageRef, file, { contentType: file.type || undefined })
 
-      if (createDocumentError || !createdDocument) {
-        throw createDocumentError || new Error("Impossible d'enregistrer le document.")
-      }
-
-      const { error: uploadError } = await supabase.storage
-        .from("documents")
-        .upload(filePath, file, {
-          contentType: file.type || undefined,
-          upsert: false,
-        })
-
-      if (uploadError) {
-        await supabase.from("documents").delete().eq("id", createdDocument.id)
-        throw uploadError
-      }
+      const createdDocRef = await addDoc(collection(db, "documents"), {
+        school_id: context.activeSchoolId,
+        owner_id: context.userId,
+        name: file.name,
+        file_path: filePath,
+        mime_type: file.type || null,
+        size_bytes: file.size,
+        created_at: serverTimestamp(),
+        updated_at: serverTimestamp(),
+      })
 
       if (context.activeSchoolId && shareClassIds.length) {
-        const shareRows = shareClassIds.map((classId) => ({
-          document_id: createdDocument.id,
-          school_id: context.activeSchoolId,
-          class_id: classId,
-          shared_by: context.userId,
-        }))
-
-        const { error: shareError } = await supabase.from("document_shares").insert(shareRows)
-
-        if (shareError) {
-          await supabase.storage.from("documents").remove([filePath])
-          await supabase.from("documents").delete().eq("id", createdDocument.id)
-          throw shareError
+        for (const classId of shareClassIds) {
+          await addDoc(collection(db, "document_shares"), {
+            document_id: createdDocRef.id,
+            school_id: context.activeSchoolId,
+            class_id: classId,
+            shared_by: context.userId,
+            created_at: serverTimestamp(),
+          })
         }
 
-        await supabase.from("activity_events").insert({
+        await addDoc(collection(db, "activity_events"), {
           school_id: context.activeSchoolId,
           class_id: shareClassIds[0] || null,
           actor_id: context.userId,
@@ -147,6 +127,7 @@ export default function DocumentsPage() {
           payload: {
             text: `${file.name} a été partagé avec ${shareClassIds.length} classe(s).`,
           },
+          created_at: serverTimestamp(),
         })
       }
 
@@ -162,16 +143,19 @@ export default function DocumentsPage() {
   const openDocument = async (document: DocumentRow, download = false) => {
     try {
       setError(null)
-      const supabase = createClient()
-      const { data, error: signedUrlError } = await supabase.storage
-        .from("documents")
-        .createSignedUrl(document.filePath, 60 * 10, download ? { download: document.name } : undefined)
+      const storageRef = ref(storage, document.filePath)
+      const url = await getDownloadURL(storageRef)
 
-      if (signedUrlError || !data?.signedUrl) {
-        throw signedUrlError || new Error("Impossible d'ouvrir le document.")
+      if (download) {
+        const a = window.document.createElement("a")
+        a.href = url
+        a.download = document.name
+        a.target = "_blank"
+        a.rel = "noopener noreferrer"
+        a.click()
+      } else {
+        window.open(url, "_blank", "noopener,noreferrer")
       }
-
-      window.open(data.signedUrl, "_blank", "noopener,noreferrer")
     } catch (e: any) {
       setError(e.message || "Impossible d'ouvrir le document.")
     }

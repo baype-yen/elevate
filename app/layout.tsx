@@ -1,6 +1,5 @@
 import type { Metadata, Viewport } from 'next'
 import { Roboto, Roboto_Slab } from 'next/font/google'
-import { Analytics } from '@vercel/analytics/next'
 import './globals.css'
 
 const _roboto = Roboto({ subsets: ["latin"], weight: ["300", "400", "500", "700", "900"] });
@@ -42,7 +41,6 @@ export default function RootLayout({
     <html lang="fr">
       <body className="font-sans antialiased">
         {children}
-        <Analytics />
       </body>
     </html>
   )

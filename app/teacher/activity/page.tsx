@@ -4,9 +4,9 @@ import { useEffect, useState } from "react"
 import { Icons } from "@/components/elevate/icons"
 import { ElevateButton } from "@/components/elevate/shared"
 import { cn } from "@/lib/utils"
-import { createClient } from "@/lib/supabase/client"
+import { db } from "@/lib/firebase/client"
 import { useAppContext } from "@/hooks/use-app-context"
-import { fetchTeacherActivityData } from "@/lib/supabase/client-data"
+import { fetchTeacherActivityData } from "@/lib/firebase/client-data"
 
 const activityIcons: Record<string, React.ReactNode> = {
   submission: <Icons.FileText />,
@@ -27,8 +27,7 @@ export default function ActivityPage() {
 
   useEffect(() => {
     if (!context) return
-    const supabase = createClient()
-    fetchTeacherActivityData(supabase, context.userId, context.activeSchoolId).then(setActivities)
+    fetchTeacherActivityData(db, context.userId, context.activeSchoolId).then(setActivities)
   }, [context])
 
   if (loading) {

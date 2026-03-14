@@ -5,12 +5,14 @@ import { useSearchParams } from "next/navigation"
 import { Icons } from "@/components/elevate/icons"
 import { BadgeChooser, ElevateButton, LevelBadge } from "@/components/elevate/shared"
 import { cn } from "@/lib/utils"
-import { createClient } from "@/lib/supabase/client"
+import { db, storage } from "@/lib/firebase/client"
 import { useAppContext } from "@/hooks/use-app-context"
 import {
   fetchStudentExercisesData,
   type SubmissionDocumentPayload,
-} from "@/lib/supabase/client-data"
+} from "@/lib/firebase/client-data"
+import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage"
+import { collection, addDoc, updateDoc, doc, getDocs, query, where, deleteDoc, serverTimestamp } from "firebase/firestore"
 
 type AssignmentRow = {
   id: string
@@ -151,8 +153,7 @@ export default function ExercisesPage() {
 
   const loadData = async () => {
     if (!context) return
-    const supabase = createClient()
-    const payload = await fetchStudentExercisesData(supabase, context.userId, context.activeSchoolId)
+    const payload = await fetchStudentExercisesData(db, context.userId, context.activeSchoolId)
     setData(payload)
 
     setSelectedWritingId((previous) => {
@@ -248,16 +249,20 @@ export default function ExercisesPage() {
     try {
       setError(null)
       setBusyDocumentId(document.id)
-      const supabase = createClient()
-      const { data: signed, error: signedError } = await supabase.storage
-        .from("documents")
-        .createSignedUrl(document.filePath, 60 * 10, download ? { download: document.name } : undefined)
+      const url = await getDownloadURL(ref(storage, document.filePath))
 
-      if (signedError || !signed?.signedUrl) {
-        throw signedError || new Error("Impossible d'ouvrir le document.")
+      if (download) {
+        const a = window.document.createElement("a")
+        a.href = url
+        a.download = document.name
+        a.target = "_blank"
+        a.rel = "noopener,noreferrer"
+        window.document.body.appendChild(a)
+        a.click()
+        window.document.body.removeChild(a)
+      } else {
+        window.open(url, "_blank", "noopener,noreferrer")
       }
-
-      window.open(signed.signedUrl, "_blank", "noopener,noreferrer")
     } catch (e: any) {
       setError(e.message || "Impossible d'ouvrir le document.")
     } finally {
@@ -288,58 +293,53 @@ export default function ExercisesPage() {
       setError(null)
       setSuccess(null)
 
-      const supabase = createClient()
       const lastDot = file.name.lastIndexOf(".")
       const extension = lastDot >= 0 ? file.name.slice(lastDot + 1).toLowerCase() : ""
       const baseName = lastDot >= 0 ? file.name.slice(0, lastDot) : file.name
       const normalizedBase = normalizeFileName(baseName)
       const token = Math.random().toString(36).slice(2, 8)
-      const filePath = `${schoolId}/${context.userId}/submission-${currentWriting.id}-${Date.now()}-${token}-${normalizedBase}${extension ? `.${extension}` : ""}`
+      const filePath = `documents/${context.userId}/submission-${currentWriting.id}-${Date.now()}-${token}-${normalizedBase}${extension ? `.${extension}` : ""}`
 
-      const { data: createdDocument, error: createDocumentError } = await supabase
-        .from("documents")
-        .insert({
-          school_id: schoolId,
-          owner_id: context.userId,
-          name: file.name,
-          file_path: filePath,
-          mime_type: file.type || null,
-          size_bytes: file.size,
-        })
-        .select("id")
-        .single()
+      const createdDocumentRef = await addDoc(collection(db, "documents"), {
+        school_id: schoolId,
+        owner_id: context.userId,
+        name: file.name,
+        file_path: filePath,
+        mime_type: file.type || null,
+        size_bytes: file.size,
+        created_at: serverTimestamp(),
+        updated_at: serverTimestamp(),
+      })
 
-      if (createDocumentError || !createdDocument) {
-        throw createDocumentError || new Error("Impossible d'enregistrer le document.")
+      if (!createdDocumentRef.id) {
+        throw new Error("Impossible d'enregistrer le document.")
       }
 
-      const { error: uploadError } = await supabase.storage
-        .from("documents")
-        .upload(filePath, file, {
+      try {
+        await uploadBytes(ref(storage, filePath), file, {
           contentType: file.type || undefined,
-          upsert: false,
         })
-
-      if (uploadError) {
-        await supabase.from("documents").delete().eq("id", createdDocument.id)
+      } catch (uploadError) {
+        await deleteDoc(doc(db, "documents", createdDocumentRef.id))
         throw uploadError
       }
 
-      const { error: shareError } = await supabase.from("document_shares").insert({
-        document_id: createdDocument.id,
-        school_id: schoolId,
-        assignment_id: currentWriting.id,
-        shared_by: context.userId,
-      })
-
-      if (shareError) {
-        await supabase.storage.from("documents").remove([filePath])
-        await supabase.from("documents").delete().eq("id", createdDocument.id)
+      try {
+        await addDoc(collection(db, "document_shares"), {
+          document_id: createdDocumentRef.id,
+          school_id: schoolId,
+          assignment_id: currentWriting.id,
+          shared_by: context.userId,
+          created_at: serverTimestamp(),
+        })
+      } catch (shareError) {
+        await deleteObject(ref(storage, filePath))
+        await deleteDoc(doc(db, "documents", createdDocumentRef.id))
         throw shareError
       }
 
       setWritingDocument({
-        id: createdDocument.id,
+        id: createdDocumentRef.id,
         name: file.name,
         filePath,
         mimeType: file.type || null,
@@ -368,15 +368,15 @@ export default function ExercisesPage() {
       setError(null)
       setSuccess(null)
 
-      const supabase = createClient()
-      const { data: existingSubmission, error: submissionLookupError } = await supabase
-        .from("submissions")
-        .select("id, status")
-        .eq("assignment_id", currentWriting.id)
-        .eq("student_id", context.userId)
-        .maybeSingle()
-
-      if (submissionLookupError) throw submissionLookupError
+      const submissionsQuery = query(
+        collection(db, "submissions"),
+        where("assignment_id", "==", currentWriting.id),
+        where("student_id", "==", context.userId),
+      )
+      const submissionSnapshot = await getDocs(submissionsQuery)
+      const existingSubmission = submissionSnapshot.empty
+        ? null
+        : { id: submissionSnapshot.docs[0].id, ...submissionSnapshot.docs[0].data() as { status: string } }
 
       if (existingSubmission?.status === "graded") {
         setError("Ce devoir est déjà corrigé. Vous ne pouvez plus le modifier.")
@@ -407,27 +407,23 @@ export default function ExercisesPage() {
       }
 
       if (existingSubmission?.id) {
-        const { error: updateError } = await supabase
-          .from("submissions")
-          .update(mutation)
-          .eq("id", existingSubmission.id)
-
-        if (updateError) throw updateError
+        await updateDoc(doc(db, "submissions", existingSubmission.id), {
+          ...mutation,
+          updated_at: serverTimestamp(),
+        })
       } else {
-        const { error: insertError } = await supabase
-          .from("submissions")
-          .insert({
-            assignment_id: currentWriting.id,
-            school_id: currentWriting.schoolId || context.activeSchoolId,
-            student_id: context.userId,
-            ...mutation,
-          })
-
-        if (insertError) throw insertError
+        await addDoc(collection(db, "submissions"), {
+          assignment_id: currentWriting.id,
+          school_id: currentWriting.schoolId || context.activeSchoolId,
+          student_id: context.userId,
+          ...mutation,
+          created_at: serverTimestamp(),
+          updated_at: serverTimestamp(),
+        })
       }
 
       if (status === "submitted") {
-        await supabase.from("activity_events").insert({
+        await addDoc(collection(db, "activity_events"), {
           school_id: currentWriting.schoolId || context.activeSchoolId,
           class_id: currentWriting.classId,
           actor_id: context.userId,
@@ -436,6 +432,7 @@ export default function ExercisesPage() {
           payload: {
             text: `Devoir envoyé : ${currentWriting.title}`,
           },
+          created_at: serverTimestamp(),
         })
       }
 
@@ -466,19 +463,17 @@ export default function ExercisesPage() {
       setError(null)
       setSuccess(null)
 
-      const supabase = createClient()
       const now = new Date().toISOString()
 
       if (!exercise.readOnly) {
-        const { error: updateError } = await supabase
-          .from("personalized_exercises")
-          .update({ is_completed: true, completed_at: now })
-          .eq("id", exercise.id)
-
-        if (updateError) throw updateError
+        await updateDoc(doc(db, "personalized_exercises", exercise.id), {
+          is_completed: true,
+          completed_at: now,
+          updated_at: serverTimestamp(),
+        })
       }
 
-      const { error: insertEventError } = await supabase.from("activity_events").insert({
+      await addDoc(collection(db, "activity_events"), {
         school_id: exercise.schoolId || context.activeSchoolId,
         class_id: exercise.classId || null,
         actor_id: context.userId,
@@ -491,9 +486,8 @@ export default function ExercisesPage() {
           response,
           submitted_at: now,
         },
+        created_at: serverTimestamp(),
       })
-
-      if (insertEventError) throw insertEventError
 
       setOpenExerciseId(null)
       setSuccess(
