@@ -54,6 +54,11 @@ type PersonalizedRow = {
   isCompleted: boolean
   dueAt: string | null
   createdAt: string
+  readOnly?: boolean
+  responseText?: string
+  responseSubmittedAt?: string | null
+  schoolId?: string | null
+  classId?: string | null
 }
 
 type ExercisesPayload = {
@@ -99,6 +104,32 @@ function typeLabel(type: string) {
   return type
 }
 
+function formatFeedbackParagraphs(feedback: string) {
+  const normalized = (feedback || "").replace(/\r\n/g, "\n").trim()
+  if (!normalized) return [] as string[]
+
+  const explicitParagraphs = normalized
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.replace(/\n/g, " ").replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+
+  if (explicitParagraphs.length > 1) return explicitParagraphs
+
+  const sentences = normalized
+    .split(/(?<=[.!?])\s+(?=[A-Z0-9À-ÖØ-Þ])/u)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean)
+
+  if (sentences.length <= 2) return [normalized]
+
+  const grouped: string[] = []
+  for (let index = 0; index < sentences.length; index += 2) {
+    grouped.push(sentences.slice(index, index + 2).join(" "))
+  }
+
+  return grouped
+}
+
 export default function ExercisesPage() {
   const { context, loading } = useAppContext()
   const searchParams = useSearchParams()
@@ -109,8 +140,11 @@ export default function ExercisesPage() {
   const [writingDocument, setWritingDocument] = useState<SubmissionDocumentPayload | null>(null)
   const [busy, setBusy] = useState(false)
   const [busyDocumentId, setBusyDocumentId] = useState<string | null>(null)
+  const [busyExerciseId, setBusyExerciseId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  const [openExerciseId, setOpenExerciseId] = useState<string | null>(null)
+  const [exerciseDrafts, setExerciseDrafts] = useState<Record<string, string>>({})
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const requestedTab = searchParams.get("tab")
   const requestedAssignmentId = searchParams.get("assignment")
@@ -136,7 +170,7 @@ export default function ExercisesPage() {
 
   useEffect(() => {
     if (!requestedTab) return
-    if (requestedTab === "quiz" || requestedTab === "reading" || requestedTab === "writing") {
+    if (requestedTab === "quiz" || requestedTab === "reading" || requestedTab === "writing" || requestedTab === "personalized") {
       setActiveTab(requestedTab)
     }
   }, [requestedTab])
@@ -183,6 +217,32 @@ export default function ExercisesPage() {
     setWritingText(currentWriting.submission?.content.text || "")
     setWritingDocument(currentWriting.submission?.content.document || null)
   }, [currentWriting?.id, currentWriting?.submission?.id, currentWriting?.submission?.status])
+
+  useEffect(() => {
+    setExerciseDrafts((previous) => {
+      const next = { ...previous }
+      const knownIds = new Set(data.personalizedExercises.map((exercise) => exercise.id))
+
+      for (const exercise of data.personalizedExercises) {
+        if (typeof next[exercise.id] !== "string") {
+          next[exercise.id] = exercise.responseText || ""
+        }
+      }
+
+      for (const id of Object.keys(next)) {
+        if (!knownIds.has(id)) {
+          delete next[id]
+        }
+      }
+
+      return next
+    })
+
+    setOpenExerciseId((previous) => {
+      if (!previous) return previous
+      return data.personalizedExercises.some((exercise) => exercise.id === previous) ? previous : null
+    })
+  }, [data.personalizedExercises])
 
   const openDocument = async (document: SubmissionDocumentPayload, download = false) => {
     try {
@@ -388,26 +448,161 @@ export default function ExercisesPage() {
     }
   }
 
-  const markExerciseCompleted = async (exerciseId: string) => {
+  const setExerciseDraft = (exerciseId: string, value: string) => {
+    setExerciseDrafts((previous) => ({ ...previous, [exerciseId]: value }))
+  }
+
+  const submitExerciseResponse = async (exercise: PersonalizedRow) => {
     if (!context) return
 
-    try {
-      setBusy(true)
-      setError(null)
-      const supabase = createClient()
-      const { error: updateError } = await supabase
-        .from("personalized_exercises")
-        .update({ is_completed: true, completed_at: new Date().toISOString() })
-        .eq("id", exerciseId)
+    const response = (exerciseDrafts[exercise.id] || "").trim()
+    if (!response) {
+      setError("Écrivez votre réponse avant de valider l'exercice.")
+      return
+    }
 
-      if (updateError) throw updateError
+    try {
+      setBusyExerciseId(exercise.id)
+      setError(null)
+      setSuccess(null)
+
+      const supabase = createClient()
+      const now = new Date().toISOString()
+
+      if (!exercise.readOnly) {
+        const { error: updateError } = await supabase
+          .from("personalized_exercises")
+          .update({ is_completed: true, completed_at: now })
+          .eq("id", exercise.id)
+
+        if (updateError) throw updateError
+      }
+
+      const { error: insertEventError } = await supabase.from("activity_events").insert({
+        school_id: exercise.schoolId || context.activeSchoolId,
+        class_id: exercise.classId || null,
+        actor_id: context.userId,
+        target_user_id: context.userId,
+        event_type: "completion",
+        payload: {
+          kind: "personalized_exercise_completion",
+          exercise_id: exercise.id,
+          title: exercise.title,
+          response,
+          submitted_at: now,
+        },
+      })
+
+      if (insertEventError) throw insertEventError
+
+      setOpenExerciseId(null)
+      setSuccess(
+        exercise.readOnly
+          ? "Réponse enregistrée. Exercice marqué comme terminé en mode simplifié."
+          : "Réponse enregistrée. Exercice terminé.",
+      )
       await loadData()
     } catch (e: any) {
-      setError(e.message || "Impossible de mettre à jour l'exercice.")
+      setError(e.message || "Impossible d'enregistrer votre réponse.")
     } finally {
-      setBusy(false)
+      setBusyExerciseId(null)
     }
   }
+
+  const hasReadOnlyPersonalized = data.personalizedExercises.some((exercise) => !!exercise.readOnly)
+
+  const renderPersonalizedExercises = () => (
+    <div className="bg-card rounded-[20px] border border-gray-mid p-6">
+      <h4 className="font-serif text-base font-bold text-navy mb-3">Exercices personnalisés</h4>
+      {hasReadOnlyPersonalized && (
+        <div className="mb-3 rounded-lg border border-abricot/30 bg-abricot/10 px-3 py-2 font-sans text-xs text-abricot-dark">
+          Ces exercices sont générés automatiquement depuis la correction. Vous pouvez les faire ici et envoyer vos réponses en mode simplifié.
+        </div>
+      )}
+      <div className="flex flex-col gap-2.5">
+        {data.personalizedExercises.map((exercise) => (
+          <div key={exercise.id} className="rounded-xl border border-gray-light bg-off-white p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="font-sans text-sm font-semibold text-text-dark">{exercise.title}</div>
+                <div className="font-sans text-xs text-text-light mt-0.5">
+                  {typeLabel(exercise.type)} &middot; Niveau {exercise.level}
+                  {exercise.dueAt ? ` &middot; Échéance ${new Date(exercise.dueAt).toLocaleDateString("fr-FR")}` : ""}
+                  {exercise.responseSubmittedAt ? ` &middot; Répondu le ${new Date(exercise.responseSubmittedAt).toLocaleDateString("fr-FR")}` : ""}
+                </div>
+                <div className="font-sans text-sm text-text-mid mt-2 whitespace-pre-wrap leading-relaxed">{exercise.instructions}</div>
+
+                {!!exercise.isCompleted && !!exercise.responseText && openExerciseId !== exercise.id && (
+                  <div className="mt-3 rounded-lg border border-violet/20 bg-violet/5 px-3 py-2.5">
+                    <div className="font-sans text-[12px] font-semibold text-violet mb-1">Ma réponse</div>
+                    <p className="font-sans text-sm text-text-dark whitespace-pre-wrap leading-relaxed">{exercise.responseText}</p>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex flex-col items-end gap-2 shrink-0">
+                {exercise.isCompleted ? (
+                  <span className="px-2.5 py-1 rounded-md text-[11px] font-semibold font-sans bg-violet/10 text-violet">Terminé</span>
+                ) : (
+                  <span className="px-2.5 py-1 rounded-md text-[11px] font-semibold font-sans bg-abricot/15 text-abricot-dark">À faire</span>
+                )}
+                <ElevateButton
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setOpenExerciseId((current) => (current === exercise.id ? null : exercise.id))}
+                  disabled={busyExerciseId === exercise.id}
+                >
+                  {openExerciseId === exercise.id
+                    ? "Fermer"
+                    : exercise.isCompleted
+                    ? "Revoir ma réponse"
+                    : "Faire l'exercice"}
+                </ElevateButton>
+              </div>
+            </div>
+
+            {openExerciseId === exercise.id && (
+              <div className="mt-4 rounded-lg border border-gray-mid bg-card px-3.5 py-3">
+                <label className="block font-sans text-[12px] font-semibold text-navy mb-1.5">Votre réponse</label>
+                <textarea
+                  value={exerciseDrafts[exercise.id] || ""}
+                  onChange={(event) => setExerciseDraft(exercise.id, event.target.value)}
+                  placeholder="Rédigez votre réponse ici..."
+                  className="w-full min-h-[140px] rounded-[10px] border-2 border-gray-mid bg-off-white px-3 py-2.5 font-sans text-sm text-text-dark placeholder:text-text-light outline-none focus:border-navy focus:shadow-[0_0_0_3px_rgba(27,42,74,0.09)]"
+                />
+                <div className="mt-3 flex items-center gap-2">
+                  <ElevateButton
+                    size="sm"
+                    variant="primary"
+                    onClick={() => submitExerciseResponse(exercise)}
+                    disabled={busyExerciseId === exercise.id}
+                  >
+                    {busyExerciseId === exercise.id ? "Enregistrement..." : exercise.isCompleted ? "Mettre à jour ma réponse" : "Valider ma réponse"}
+                  </ElevateButton>
+                  <ElevateButton
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setOpenExerciseId(null)}
+                    disabled={busyExerciseId === exercise.id}
+                  >
+                    Annuler
+                  </ElevateButton>
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+        {!data.personalizedExercises.length && (
+          <div className="font-sans text-sm text-text-mid">Aucun exercice personnalisé pour le moment.</div>
+        )}
+      </div>
+    </div>
+  )
+
+  const currentFeedbackParagraphs = useMemo(
+    () => formatFeedbackParagraphs(currentWriting?.submission?.feedback || ""),
+    [currentWriting?.submission?.feedback],
+  )
 
   if (loading) {
     return <div className="font-sans text-sm text-text-mid">Chargement des exercices...</div>
@@ -423,6 +618,7 @@ export default function ExercisesPage() {
             { value: "quiz", label: "Quiz / Grammaire" },
             { value: "reading", label: "Lecture" },
             { value: "writing", label: "Production écrite" },
+            { value: "personalized", label: "Personnalisés" },
           ]}
         />
       </div>
@@ -691,9 +887,19 @@ export default function ExercisesPage() {
                       <div className="font-sans text-sm font-semibold text-navy">Correction reçue</div>
                       <div className="font-serif text-2xl font-bold text-violet">{Math.round(currentWriting.submission.score || 0)}%</div>
                     </div>
-                    <p className="font-sans text-sm text-text-dark">
-                      {currentWriting.submission.feedback || "Votre enseignant n'a pas encore ajouté de commentaire détaillé."}
-                    </p>
+                    {currentFeedbackParagraphs.length ? (
+                      <div className="space-y-3">
+                        {currentFeedbackParagraphs.map((paragraph, index) => (
+                          <p key={`${currentWriting.submission?.id || "feedback"}-${index}`} className="font-sans text-sm text-text-dark leading-relaxed">
+                            {paragraph}
+                          </p>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="font-sans text-sm text-text-dark">
+                        Votre enseignant n'a pas encore ajouté de commentaire détaillé.
+                      </p>
+                    )}
                   </div>
                 )}
               </>
@@ -702,33 +908,13 @@ export default function ExercisesPage() {
             )}
           </div>
 
-          <div className="bg-card rounded-[20px] border border-gray-mid p-6">
-            <h4 className="font-serif text-base font-bold text-navy mb-3">Exercices personnalisés</h4>
-            <div className="flex flex-col gap-2.5">
-              {data.personalizedExercises.map((exercise) => (
-                <div key={exercise.id} className="rounded-xl border border-gray-light bg-off-white p-4 flex items-start justify-between gap-3">
-                  <div>
-                    <div className="font-sans text-sm font-semibold text-text-dark">{exercise.title}</div>
-                    <div className="font-sans text-xs text-text-light mt-0.5">
-                      {typeLabel(exercise.type)} &middot; Niveau {exercise.level}
-                      {exercise.dueAt ? ` &middot; Échéance ${new Date(exercise.dueAt).toLocaleDateString("fr-FR")}` : ""}
-                    </div>
-                    <div className="font-sans text-sm text-text-mid mt-2">{exercise.instructions}</div>
-                  </div>
-                  {exercise.isCompleted ? (
-                    <span className="px-2.5 py-1 rounded-md text-[11px] font-semibold font-sans bg-violet/10 text-violet">Terminé</span>
-                  ) : (
-                    <ElevateButton size="sm" variant="secondary" onClick={() => markExerciseCompleted(exercise.id)} disabled={busy}>
-                      Marquer terminé
-                    </ElevateButton>
-                  )}
-                </div>
-              ))}
-              {!data.personalizedExercises.length && (
-                <div className="font-sans text-sm text-text-mid">Aucun exercice personnalisé pour le moment.</div>
-              )}
-            </div>
-          </div>
+          {renderPersonalizedExercises()}
+        </div>
+      )}
+
+      {activeTab === "personalized" && (
+        <div className="max-w-[900px]">
+          {renderPersonalizedExercises()}
         </div>
       )}
     </div>

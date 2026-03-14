@@ -85,6 +85,11 @@ function averageConfidence(pages: OcrPageReport[]) {
   return pages.reduce((sum, page) => sum + page.confidence, 0) / pages.length
 }
 
+function isMissingPersonalizedExercisesTableError(error: any) {
+  const message = String(error?.message || "").toLowerCase()
+  return error?.code === "PGRST205" || (message.includes("personalized_exercises") && message.includes("could not find the table"))
+}
+
 export default function TeacherPhotoExamsPage() {
   const { context, loading } = useAppContext()
   const [classes, setClasses] = useState<ClassOption[]>([])
@@ -407,7 +412,13 @@ export default function TeacherPhotoExamsPage() {
       }))
 
       const { error: insertError } = await supabase.from("personalized_exercises").insert(rows)
-      if (insertError) throw insertError
+      if (insertError) {
+        if (isMissingPersonalizedExercisesTableError(insertError)) {
+          setSuccess("Correction analysee, mais les exercices personnalises ne sont pas encore disponibles sur cette base.")
+          return
+        }
+        throw insertError
+      }
 
       await supabase.from("activity_events").insert({
         school_id: context.activeSchoolId,

@@ -72,6 +72,11 @@ function normalizeFileName(name: string) {
   return cleaned || "document"
 }
 
+function isMissingPersonalizedExercisesTableError(error: any) {
+  const message = String(error?.message || "").toLowerCase()
+  return error?.code === "PGRST205" || (message.includes("personalized_exercises") && message.includes("could not find the table"))
+}
+
 export default function WorkPage() {
   const [filter, setFilter] = useState<string | string[]>("all")
   const [selectedClass, setSelectedClass] = useState<string | string[]>("all")
@@ -349,15 +354,25 @@ export default function WorkPage() {
         })
       }
 
+      let personalizedTableMissing = false
+
       if (createPersonalized) {
-        const { data: existingExercises } = await supabase
+        const { data: existingExercises, error: existingExercisesError } = await supabase
           .from("personalized_exercises")
           .select("id")
           .eq("source_submission_id", selectedWork.id)
           .eq("student_id", selectedWork.studentId)
           .limit(1)
 
-        if (!(existingExercises || []).length) {
+        if (existingExercisesError) {
+          if (isMissingPersonalizedExercisesTableError(existingExercisesError)) {
+            personalizedTableMissing = true
+          } else {
+            throw existingExercisesError
+          }
+        }
+
+        if (!personalizedTableMissing && !(existingExercises || []).length) {
           const generated = generatePersonalizedExercises({
             assignmentTitle: selectedWork.title,
             score: numericScore,
@@ -382,23 +397,33 @@ export default function WorkPage() {
               .from("personalized_exercises")
               .insert(rows)
 
-            if (insertPersonalizedError) throw insertPersonalizedError
-
-            await supabase.from("activity_events").insert({
-              school_id: selectedWork.schoolId || context.activeSchoolId,
-              class_id: selectedWork.classId,
-              actor_id: context.userId,
-              target_user_id: selectedWork.studentId,
-              event_type: "assignment_created",
-              payload: {
-                text: "Un exercice personnalisé a été ajouté après correction.",
-              },
-            })
+            if (insertPersonalizedError) {
+              if (isMissingPersonalizedExercisesTableError(insertPersonalizedError)) {
+                personalizedTableMissing = true
+              } else {
+                throw insertPersonalizedError
+              }
+            } else {
+              await supabase.from("activity_events").insert({
+                school_id: selectedWork.schoolId || context.activeSchoolId,
+                class_id: selectedWork.classId,
+                actor_id: context.userId,
+                target_user_id: selectedWork.studentId,
+                event_type: "assignment_created",
+                payload: {
+                  text: "Un exercice personnalisé a été ajouté après correction.",
+                },
+              })
+            }
           }
         }
       }
 
-      setSuccess("Correction enregistrée.")
+      setSuccess(
+        personalizedTableMissing
+          ? "Correction enregistrée. Les exercices personnalisés seront visibles dans l'espace élève (mode simplifié)."
+          : "Correction enregistrée.",
+      )
       await loadWork()
     } catch (e: any) {
       setError(e.message || "Impossible d'enregistrer la correction.")
@@ -657,7 +682,7 @@ export default function WorkPage() {
                 <textarea
                   value={gradeFeedback}
                   onChange={(event) => setGradeFeedback(event.target.value)}
-                  placeholder="Points forts, erreurs à corriger, conseils précis..."
+                  placeholder={"Points forts :\n\nÀ améliorer :\n\nConseil concret :"}
                   className="w-full min-h-[130px] rounded-[10px] border-2 border-gray-mid bg-card px-3.5 py-3 font-sans text-[15px] text-text-dark placeholder:text-text-light outline-none focus:border-navy focus:shadow-[0_0_0_3px_rgba(27,42,74,0.09)]"
                 />
               </div>

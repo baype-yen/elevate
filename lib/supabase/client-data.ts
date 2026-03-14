@@ -78,6 +78,11 @@ function normalizeAssignmentType(type: string | null | undefined) {
   return allowed.has(value) ? value : "exercise"
 }
 
+function isMissingTableError(error: any, tableName: string) {
+  const message = String(error?.message || "").toLowerCase()
+  return error?.code === "PGRST205" && message.includes(tableName.toLowerCase())
+}
+
 export type TeacherClassSummary = {
   id: string
   name: string
@@ -1134,12 +1139,38 @@ export async function fetchStudentExercisesData(supabase: SupabaseClient, userId
 
   let personalizedQuery = supabase
     .from("personalized_exercises")
-    .select("id, title, instructions, exercise_type, cefr_level, is_completed, due_at, created_at")
+    .select("id, school_id, class_id, title, instructions, exercise_type, cefr_level, is_completed, due_at, created_at")
     .eq("student_id", userId)
     .order("created_at", { ascending: false })
 
   personalizedQuery = schoolId ? personalizedQuery.eq("school_id", schoolId) : personalizedQuery
-  const { data: personalized } = await personalizedQuery
+  const { data: personalized, error: personalizedError } = await personalizedQuery
+  const personalizedTableMissing = isMissingTableError(personalizedError, "personalized_exercises")
+
+  let completionEventsQuery = supabase
+    .from("activity_events")
+    .select("payload, created_at")
+    .eq("actor_id", userId)
+    .eq("event_type", "completion")
+    .order("created_at", { ascending: false })
+    .limit(500)
+
+  completionEventsQuery = schoolId ? completionEventsQuery.eq("school_id", schoolId) : completionEventsQuery
+  const { data: completionEvents } = await completionEventsQuery
+
+  const completionByExerciseId = new Map<string, { responseText: string; submittedAt: string | null }>()
+  for (const event of completionEvents || []) {
+    const payload = event.payload && typeof event.payload === "object" ? event.payload : null
+    if (!payload || payload.kind !== "personalized_exercise_completion") continue
+
+    const exerciseId = typeof payload.exercise_id === "string" ? payload.exercise_id : ""
+    if (!exerciseId || completionByExerciseId.has(exerciseId)) continue
+
+    completionByExerciseId.set(exerciseId, {
+      responseText: typeof payload.response === "string" ? payload.response : "",
+      submittedAt: typeof payload.submitted_at === "string" ? payload.submitted_at : event.created_at || null,
+    })
+  }
 
   const classNameById = new Map((classes || []).map((c) => [c.id, c.name]))
   const submissionByAssignment = new Map<string, any>()
@@ -1163,6 +1194,69 @@ export async function fetchStudentExercisesData(supabase: SupabaseClient, userId
     }
     documentsByAssignment.set(share.assignment_id, rows)
   }
+
+  const persistedPersonalized = (personalized || []).map((exercise) => {
+    const completion = completionByExerciseId.get(exercise.id)
+
+    return {
+      id: exercise.id,
+      schoolId: exercise.school_id || null,
+      classId: exercise.class_id || null,
+      title: exercise.title,
+      instructions: exercise.instructions,
+      type: normalizeAssignmentType(exercise.exercise_type),
+      level: upLevel(exercise.cefr_level),
+      isCompleted: !!exercise.is_completed || !!completion,
+      dueAt: exercise.due_at,
+      createdAt: exercise.created_at,
+      readOnly: false,
+      responseText: completion?.responseText || "",
+      responseSubmittedAt: completion?.submittedAt || null,
+    }
+  })
+
+  const fallbackPersonalized = personalizedTableMissing
+    ? (assignments || [])
+        .flatMap((assignment) => {
+          const submission = submissionByAssignment.get(assignment.id)
+          if (!submission || submission.status !== "graded" || typeof submission.score !== "number") return []
+
+          const generated = generatePersonalizedExercises({
+            assignmentTitle: assignment.title,
+            score: submission.score,
+            feedback: submission.feedback || "",
+            cefrLevel: upLevel(assignment.cefr_level),
+          })
+
+          return generated.map((exercise, index) => {
+            const id = `fallback-${submission.id}-${index + 1}`
+            const completion = completionByExerciseId.get(id)
+
+            return {
+              id,
+              schoolId: assignment.school_id || null,
+              classId: assignment.class_id || null,
+              title: exercise.title,
+              instructions: exercise.instructions,
+              type: normalizeAssignmentType(exercise.exerciseType),
+              level: upLevel(exercise.cefrLevel),
+              isCompleted: !!completion,
+              dueAt: null,
+              createdAt: submission.graded_at || submission.submitted_at || assignment.created_at,
+              readOnly: true,
+              responseText: completion?.responseText || "",
+              responseSubmittedAt: completion?.submittedAt || null,
+            }
+          })
+        })
+        .sort((a, b) => {
+          const at = Date.parse(a.createdAt || "") || 0
+          const bt = Date.parse(b.createdAt || "") || 0
+          return bt - at
+        })
+    : []
+
+  const personalizedExercises = persistedPersonalized.length ? persistedPersonalized : fallbackPersonalized
 
   return {
     classes: (classes || []).map((c) => ({ id: c.id, name: c.name })),
@@ -1195,16 +1289,7 @@ export async function fetchStudentExercisesData(supabase: SupabaseClient, userId
           : null,
       }
     }),
-    personalizedExercises: (personalized || []).map((exercise) => ({
-      id: exercise.id,
-      title: exercise.title,
-      instructions: exercise.instructions,
-      type: normalizeAssignmentType(exercise.exercise_type),
-      level: upLevel(exercise.cefr_level),
-      isCompleted: !!exercise.is_completed,
-      dueAt: exercise.due_at,
-      createdAt: exercise.created_at,
-    })),
+    personalizedExercises,
   }
 }
 
