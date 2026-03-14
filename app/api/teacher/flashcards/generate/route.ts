@@ -78,7 +78,8 @@ export async function POST(request: Request) {
       teacherFeedback: submission.feedback || "",
       score: submission.score ?? 0,
     })
-  } catch {
+  } catch (err) {
+    console.error("[flashcards/generate] Gemini error:", err)
     return NextResponse.json(
       { error: "La génération a échoué, veuillez réessayer." },
       { status: 502 },
