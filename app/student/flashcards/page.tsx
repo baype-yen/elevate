@@ -120,6 +120,7 @@ export default function FlashcardsPage() {
       grammar: "Grammaire",
       vocabulary: "Vocabulaire",
       syntax: "Syntaxe",
+      structure: "Structure",
     }
     return labels[cat] || cat
   }
