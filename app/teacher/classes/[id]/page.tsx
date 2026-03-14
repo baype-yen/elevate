@@ -242,7 +242,14 @@ export default function TeacherClassDetailPage() {
       setError(null)
       setSuccess(null)
 
-      const text = await file.text()
+      const buffer = await file.arrayBuffer()
+      let text = new TextDecoder("utf-8").decode(buffer)
+      // If UTF-8 produces replacement characters, retry with Windows-1252 (common for Excel CSV)
+      if (text.includes("\uFFFD")) {
+        text = new TextDecoder("windows-1252").decode(buffer)
+      }
+      // Strip BOM if present
+      if (text.charCodeAt(0) === 0xfeff) text = text.slice(1)
       const parsedRows = parseRosterCsv(text)
 
       if (!parsedRows.length) {
@@ -343,7 +350,7 @@ export default function TeacherClassDetailPage() {
       <input
         ref={fileInputRef}
         type="file"
-        accept=".csv,text/csv"
+        accept=".csv,.txt,text/csv,text/plain,application/octet-stream"
         className="hidden"
         onChange={onCsvSelected}
       />
