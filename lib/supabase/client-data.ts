@@ -659,7 +659,7 @@ export async function fetchTeacherWorkData(
 
   const { data: submissions } = await supabase
     .from("submissions")
-    .select("id, assignment_id, student_id, status, score, content, feedback, submitted_at, graded_at, profiles(full_name)")
+    .select("id, assignment_id, student_id, status, score, content, feedback, submitted_at, graded_at, student:profiles!submissions_student_id_fkey(full_name)")
     .in("assignment_id", assignmentIds)
     .order("submitted_at", { ascending: false })
 
@@ -678,7 +678,7 @@ export async function fetchTeacherWorkData(
       schoolId: a?.school_id || schoolId,
       studentId: s.student_id,
       title: a?.title || "Devoir",
-      student: (s.profiles as any)?.full_name || "Élève",
+      student: (s.student as any)?.full_name || "Élève",
       className: classNameById.get(a?.class_id) || "Classe",
       submitted: s.submitted_at ? new Date(s.submitted_at).toLocaleDateString("fr-FR") : "-",
       submittedAtRaw: s.submitted_at || null,
