@@ -71,11 +71,9 @@ export default function FlashcardsPage() {
     }
   }
 
-  const learningCount = cards.length
   const startReview = () => {
-    const toReview = cards.filter((c) => c.status === "learning")
-    if (!toReview.length) return
-    setReviewCards(toReview)
+    if (!cards.length) return
+    setReviewCards(cards)
     setReviewIndex(0)
     setRevealed(false)
     setReviewResults({ known: 0, learning: 0 })

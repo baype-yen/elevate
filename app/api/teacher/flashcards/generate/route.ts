@@ -89,7 +89,7 @@ export async function POST(request: Request) {
       teacherFeedback: submission.feedback || "",
       score: submission.score ?? 0,
     })
-  } catch (err: any) {
+  } catch {
     return NextResponse.json(
       { error: "La génération a échoué, veuillez réessayer." },
       { status: 502 },

@@ -78,7 +78,7 @@ service cloud.firestore {
 
     // Flashcards
     match /flashcards/{flashcardId} {
-      allow read: if isSignedIn();
+      allow read: if isSignedIn() && resource.data.student_id == request.auth.uid;
       allow update: if isSignedIn()
         && resource.data.student_id == request.auth.uid
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'reviewed_at']);
