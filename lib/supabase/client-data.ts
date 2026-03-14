@@ -634,7 +634,6 @@ export async function fetchTeacherWorkData(
     .eq("teacher_id", userId)
     .is("archived_at", null)
 
-  classQuery = schoolId ? classQuery.eq("school_id", schoolId) : classQuery.is("school_id", null)
   classQuery = classId ? classQuery.eq("id", classId) : classQuery
 
   const { data: classes } = await classQuery

@@ -587,7 +587,9 @@ export default function WorkPage() {
         </div>
 
         {!filteredWork.length && (
-          <div className="mt-4 font-sans text-sm text-text-mid">Aucune soumission pour le moment.</div>
+          <div className="mt-4 font-sans text-sm text-text-mid">
+            Aucune soumission pour le moment. Côté élève, il faut cliquer sur "Envoyer à l'enseignant" pour que la copie apparaisse ici.
+          </div>
         )}
 
         {selectedWork && (
