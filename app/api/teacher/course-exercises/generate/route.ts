@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server"
-import { getStorage } from "firebase-admin/storage"
 import { FieldValue } from "firebase-admin/firestore"
 import { adminAuth, adminDb } from "@/lib/firebase/admin"
 import {
+  COURSE_SOURCE_TEXT_MIN_LENGTH,
   courseMaterialTypeLabel,
   courseTopicLabel,
   parseCourseMaterialType,
@@ -13,14 +13,6 @@ import { generateCourseExercisesFromDocument } from "@/lib/course-exercises/gemi
 type GenerateCourseExercisesPayload = {
   documentId?: string
 }
-
-const INLINE_MIME_TYPES = new Set([
-  "application/pdf",
-  "text/plain",
-  "text/markdown",
-  "text/csv",
-  "application/json",
-])
 
 function badRequest(message: string) {
   return NextResponse.json({ error: message }, { status: 400 })
@@ -37,99 +29,15 @@ async function getCallerUid(request: Request): Promise<string | null> {
   }
 }
 
-function resolveBucketName() {
-  const direct = (process.env.FIREBASE_STORAGE_BUCKET || "").trim().replace(/^gs:\/\//, "")
-  if (direct) return direct
-
-  const publicBucket = (process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "").trim().replace(/^gs:\/\//, "")
-  if (publicBucket) return publicBucket
-
-  const projectId = (process.env.FIREBASE_PROJECT_ID || "").trim()
-  if (projectId) return `${projectId}.firebasestorage.app`
-
-  return ""
-}
-
-function isInlineMimeType(mimeType: string) {
-  if (INLINE_MIME_TYPES.has(mimeType)) return true
-  return mimeType.startsWith("image/")
-}
-
-function isTextMimeType(mimeType: string) {
-  return mimeType.startsWith("text/") || mimeType === "application/json"
-}
-
-function normalizeMimeType(rawMimeType: unknown, fileName: string) {
-  const mimeType = typeof rawMimeType === "string" ? rawMimeType.trim().toLowerCase() : ""
-  if (mimeType) return mimeType
-
-  const extension = (fileName.split(".").pop() || "").toLowerCase()
-  if (extension === "pdf") return "application/pdf"
-  if (["txt", "md", "csv"].includes(extension)) return "text/plain"
-  if (["png"].includes(extension)) return "image/png"
-  if (["jpg", "jpeg"].includes(extension)) return "image/jpeg"
-  return "application/octet-stream"
-}
-
-async function downloadDocumentBuffer(filePath: string) {
-  const bucketName = resolveBucketName()
-  if (!bucketName) throw new Error("Le bucket Firebase Storage n'est pas configuré.")
-
-  const bucket = getStorage().bucket(bucketName)
-  const [buffer] = await bucket.file(filePath).download()
-  return buffer
-}
-
-function decodeTextContent(buffer: Buffer) {
-  const utf8 = new TextDecoder("utf-8", { fatal: false }).decode(buffer)
-  return utf8.replace(/\u0000/g, "").trim()
-}
-
-type DocumentContentPayload =
-  | { textContent: string; inlineFile?: undefined }
-  | { textContent?: undefined; inlineFile: { mimeType: string; dataBase64: string } }
-
-async function resolveDocumentContent(document: any): Promise<DocumentContentPayload> {
+function resolveDocumentContent(document: any): { textContent: string } {
   const manualText = typeof document.course_source_text === "string" ? document.course_source_text.trim() : ""
-  if (manualText.length >= 40) {
+  if (manualText.length >= COURSE_SOURCE_TEXT_MIN_LENGTH) {
     return { textContent: manualText }
   }
 
-  const filePath = typeof document.file_path === "string" ? document.file_path : ""
-  if (!filePath) {
-    throw new Error("Document invalide: chemin de fichier absent.")
-  }
-
-  const fileName = typeof document.name === "string" ? document.name : "document"
-  const mimeType = normalizeMimeType(document.mime_type, fileName)
-  const sizeBytes = typeof document.size_bytes === "number" ? document.size_bytes : 0
-
-  if (sizeBytes > 10 * 1024 * 1024) {
-    throw new Error("Le document est trop volumineux pour la génération IA (max 10 MB).")
-  }
-
-  const buffer = await downloadDocumentBuffer(filePath)
-
-  if (isTextMimeType(mimeType)) {
-    const textContent = decodeTextContent(buffer)
-    if (textContent.length < 40) {
-      throw new Error("Le document contient trop peu de texte exploitable pour générer des exercices.")
-    }
-    return { textContent }
-  }
-
-  if (!isInlineMimeType(mimeType)) {
-    throw new Error(
-      "Format non pris en charge pour la génération automatique. Utilisez un TXT/CSV/PDF/image ou ajoutez le contenu texte lors du téléversement.",
-    )
-  }
-
-  return {
-    inlineFile: {
-      mimeType,
-      dataBase64: buffer.toString("base64"),
-    },
-  }
+  throw new Error(
+    `Mode strict activé: ajoutez le contenu texte du cours (minimum ${COURSE_SOURCE_TEXT_MIN_LENGTH} caractères) avant de lancer "Exercices IA".`,
+  )
 }
 
 function normalizeLevel(level: unknown) {
@@ -262,9 +170,9 @@ export async function POST(request: Request) {
     })
   }
 
-  let documentContent: DocumentContentPayload
+  let documentContent: { textContent: string }
   try {
-    documentContent = await resolveDocumentContent(document)
+    documentContent = resolveDocumentContent(document)
   } catch (error: any) {
     return NextResponse.json(
       { error: error?.message || "Impossible de lire le contenu du document." },
@@ -289,7 +197,6 @@ export async function POST(request: Request) {
         cefrLevel: level,
         documentName: document.name || "Document de cours",
         textContent: documentContent.textContent,
-        inlineFile: documentContent.inlineFile,
       })
       generatedByLevel.set(level, generatedExercises)
     }

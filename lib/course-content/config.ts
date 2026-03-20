@@ -3,6 +3,8 @@ export const COURSE_TOPIC_OPTIONS = [
   { value: "workers_condition", label: "Topic 2 : Worker's condition" },
 ] as const
 
+export const COURSE_SOURCE_TEXT_MIN_LENGTH = 120
+
 export type CourseTopicKey = (typeof COURSE_TOPIC_OPTIONS)[number]["value"]
 
 const COURSE_TOPIC_LABELS: Record<CourseTopicKey, string> = {

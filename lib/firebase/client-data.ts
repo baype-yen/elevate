@@ -16,6 +16,7 @@ import {
   type Firestore,
 } from "firebase/firestore"
 import {
+  COURSE_SOURCE_TEXT_MIN_LENGTH,
   courseMaterialTypeLabel,
   courseTopicLabel,
   parseCourseMaterialType,
@@ -897,7 +898,7 @@ export async function fetchTeacherDocumentsData(db: Firestore, userId: string, s
       return {
         id: d.id,
         name: d.name,
-        filePath: d.file_path,
+        filePath: typeof d.file_path === "string" ? d.file_path : "",
         type: toFileType(d.mime_type),
         size: toFileSize(d.size_bytes),
         date: toLocaleDateFR(d.created_at),
@@ -905,7 +906,11 @@ export async function fetchTeacherDocumentsData(db: Firestore, userId: string, s
         topicLabel: topicKey ? courseTopicLabel(topicKey) : "Ressource hors topic",
         materialType,
         materialLabel: materialType ? courseMaterialTypeLabel(materialType) : "Non classé",
-        hasSourceText: typeof d.course_source_text === "string" && d.course_source_text.trim().length > 0,
+        isTextOnly: !(typeof d.file_path === "string" && d.file_path.trim().length > 0),
+        sourceText: typeof d.course_source_text === "string" ? d.course_source_text : "",
+        hasSourceText:
+          typeof d.course_source_text === "string"
+          && d.course_source_text.trim().length >= COURSE_SOURCE_TEXT_MIN_LENGTH,
         sharedClassIds: shared.map((s) => s.id),
         sharedClassNames: shared.map((s) => s.name),
       }
