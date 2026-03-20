@@ -12,6 +12,7 @@ import { generateCourseExercisesFromDocument } from "@/lib/course-exercises/gemi
 
 type GenerateCourseExercisesPayload = {
   documentId?: string
+  forceRegenerate?: boolean
 }
 
 function badRequest(message: string) {
@@ -56,6 +57,7 @@ export async function POST(request: Request) {
   }
 
   const documentId = (payload.documentId || "").trim()
+  const forceRegenerate = payload.forceRegenerate === true
   if (!documentId) {
     return badRequest("documentId est obligatoire.")
   }
@@ -150,19 +152,70 @@ export async function POST(request: Request) {
     .where("source_document_id", "==", documentId)
     .get()
 
-  const alreadyGeneratedKeys = new Set(
-    existingSnap.docs.map((exerciseDoc) => {
-      const row = exerciseDoc.data() as any
-      return `${row.class_id || ""}:${row.student_id || ""}`
-    }),
-  )
+  const existingByTarget = new Map<string, Array<{ id: string; isCompleted: boolean }>>()
+  for (const exerciseDoc of existingSnap.docs) {
+    const row = exerciseDoc.data() as any
+    const key = `${row.class_id || ""}:${row.student_id || ""}`
+    const rows = existingByTarget.get(key) || []
+    rows.push({
+      id: exerciseDoc.id,
+      isCompleted: !!row.is_completed,
+    })
+    existingByTarget.set(key, rows)
+  }
 
-  const pendingTargets = dedupedTargets.filter(
-    (target) => !alreadyGeneratedKeys.has(`${target.classId}:${target.studentId}`),
-  )
+  const exerciseIdsToReplace = new Set<string>()
+  let skippedCompletedOnly = 0
+  let regeneratedTargets = 0
+  let createdFreshTargets = 0
+
+  const pendingTargets = dedupedTargets.filter((target) => {
+    const key = `${target.classId}:${target.studentId}`
+    const rows = existingByTarget.get(key) || []
+
+    if (!rows.length) {
+      createdFreshTargets += 1
+      return true
+    }
+
+    if (!forceRegenerate) {
+      return false
+    }
+
+    const incompleteRows = rows.filter((row) => !row.isCompleted)
+    if (!incompleteRows.length) {
+      skippedCompletedOnly += 1
+      return false
+    }
+
+    regeneratedTargets += 1
+    for (const row of incompleteRows) {
+      exerciseIdsToReplace.add(row.id)
+    }
+
+    return true
+  })
+
+  if (!forceRegenerate) {
+    skippedCompletedOnly = dedupedTargets.length - pendingTargets.length
+  }
 
   if (!pendingTargets.length) {
+    if (forceRegenerate) {
+      return NextResponse.json({
+        mode: "regenerate",
+        created: 0,
+        replacedExercises: 0,
+        regeneratedTargets: 0,
+        createdFreshTargets: 0,
+        skippedExisting: skippedCompletedOnly,
+        studentsTargeted: dedupedTargets.length,
+        message: "Aucun exercice non termine a regenerer.",
+      })
+    }
+
     return NextResponse.json({
+      mode: "generate",
       created: 0,
       skippedExisting: dedupedTargets.length,
       studentsTargeted: dedupedTargets.length,
@@ -249,20 +302,50 @@ export async function POST(request: Request) {
     await batch.commit()
   }
 
+  if (forceRegenerate && exerciseIdsToReplace.size) {
+    const ids = Array.from(exerciseIdsToReplace)
+    for (let index = 0; index < ids.length; index += 400) {
+      const batch = adminDb.batch()
+      const chunk = ids.slice(index, index + 400)
+
+      for (const exerciseId of chunk) {
+        batch.delete(adminDb.collection("personalized_exercises").doc(exerciseId))
+      }
+
+      await batch.commit()
+    }
+  }
+
   await adminDb.collection("activity_events").add({
     school_id: document.school_id || null,
     class_id: eligibleClasses[0]?.id || null,
     actor_id: callerUid,
     event_type: "assignment_created",
     payload: {
-      text: `Exercices IA créés depuis ${document.name || "un document"} (${topicLabel}).`,
+      text: forceRegenerate
+        ? `Exercices IA regeneres depuis ${document.name || "un document"} (${topicLabel}).`
+        : `Exercices IA crees depuis ${document.name || "un document"} (${topicLabel}).`,
     },
     created_at: FieldValue.serverTimestamp(),
   })
 
+  if (forceRegenerate) {
+    return NextResponse.json({
+      mode: "regenerate",
+      created: rowsToCreate.length,
+      replacedExercises: exerciseIdsToReplace.size,
+      regeneratedTargets,
+      createdFreshTargets,
+      skippedExisting: skippedCompletedOnly,
+      studentsTargeted: dedupedTargets.length,
+      levelsGenerated: Array.from(targetsByLevel.keys()).map((level) => level.toUpperCase()),
+    })
+  }
+
   return NextResponse.json({
+    mode: "generate",
     created: rowsToCreate.length,
-    skippedExisting: dedupedTargets.length - pendingTargets.length,
+    skippedExisting: skippedCompletedOnly,
     studentsTargeted: dedupedTargets.length,
     levelsGenerated: Array.from(targetsByLevel.keys()).map((level) => level.toUpperCase()),
   })

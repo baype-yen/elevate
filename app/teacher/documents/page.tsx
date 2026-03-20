@@ -70,6 +70,7 @@ export default function DocumentsPage() {
   const [shareClassIds, setShareClassIds] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
   const [generatingDocumentId, setGeneratingDocumentId] = useState<string | null>(null)
+  const [regeneratingDocumentId, setRegeneratingDocumentId] = useState<string | null>(null)
 
   const [editingDocumentId, setEditingDocumentId] = useState<string | null>(null)
   const [savingDocumentId, setSavingDocumentId] = useState<string | null>(null)
@@ -257,11 +258,19 @@ export default function DocumentsPage() {
     }
   }
 
-  const onGenerateCourseExercises = async (documentId: string) => {
+  const runCourseExercisesGeneration = async (
+    documentId: string,
+    forceRegenerate: boolean,
+  ) => {
     if (!context) return
 
     try {
-      setGeneratingDocumentId(documentId)
+      if (forceRegenerate) {
+        setRegeneratingDocumentId(documentId)
+      } else {
+        setGeneratingDocumentId(documentId)
+      }
+
       setError(null)
       setSuccess(null)
 
@@ -272,12 +281,15 @@ export default function DocumentsPage() {
           "Content-Type": "application/json",
           ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
         },
-        body: JSON.stringify({ documentId }),
+        body: JSON.stringify({ documentId, forceRegenerate }),
       })
 
       const payload = (await response.json().catch(() => ({}))) as {
         error?: string
         created?: number
+        replacedExercises?: number
+        regeneratedTargets?: number
+        createdFreshTargets?: number
         skippedExisting?: number
         studentsTargeted?: number
       }
@@ -290,14 +302,42 @@ export default function DocumentsPage() {
       const skippedCount = payload.skippedExisting || 0
       const targeted = payload.studentsTargeted || 0
 
+      if (forceRegenerate) {
+        const replacedCount = payload.replacedExercises || 0
+        const regeneratedCount = payload.regeneratedTargets || 0
+        const freshCount = payload.createdFreshTargets || 0
+
+        setSuccess(
+          `Regeneration IA terminee : ${createdCount} exercice(s) cree(s), ${replacedCount} exercice(s) non termine(s) remplace(s), ${regeneratedCount} eleve(s) regeneres, ${freshCount} nouvel(le)(s) eleve(s), ${skippedCount} eleve(s) laisses intacts (deja termines) sur ${targeted}.`,
+        )
+        return
+      }
+
       setSuccess(
         `Generation IA terminee : ${createdCount} exercice(s) cree(s), ${skippedCount} eleve(s) deja traites sur ${targeted}.`,
       )
     } catch (e: any) {
       setError(e.message || "Impossible de generer des exercices depuis ce document.")
     } finally {
-      setGeneratingDocumentId(null)
+      if (forceRegenerate) {
+        setRegeneratingDocumentId(null)
+      } else {
+        setGeneratingDocumentId(null)
+      }
     }
+  }
+
+  const onGenerateCourseExercises = async (documentId: string) => {
+    await runCourseExercisesGeneration(documentId, false)
+  }
+
+  const onRegenerateCourseExercises = async (documentRow: DocumentRow) => {
+    const confirmed = window.confirm(
+      "Regenerer les exercices IA ? Cette action remplace uniquement les exercices non termines, et conserve les exercices deja termines.",
+    )
+    if (!confirmed) return
+
+    await runCourseExercisesGeneration(documentRow.id, true)
   }
 
   const onDeleteDocument = async (documentRow: DocumentRow) => {
@@ -484,7 +524,12 @@ export default function DocumentsPage() {
                 size="sm"
                 variant="outline"
                 onClick={() => onToggleEditor(documentRow)}
-                disabled={busy || savingDocumentId === documentRow.id || generatingDocumentId === documentRow.id}
+                disabled={
+                  busy
+                  || savingDocumentId === documentRow.id
+                  || generatingDocumentId === documentRow.id
+                  || regeneratingDocumentId === documentRow.id
+                }
               >
                 {editingDocumentId === documentRow.id ? "Fermer" : "Modifier"}
               </ElevateButton>
@@ -496,6 +541,7 @@ export default function DocumentsPage() {
                 disabled={
                   busy
                   || generatingDocumentId === documentRow.id
+                  || regeneratingDocumentId === documentRow.id
                   || !documentRow.sharedClassIds.length
                   || !documentRow.topicKey
                   || !documentRow.materialType
@@ -503,6 +549,23 @@ export default function DocumentsPage() {
                 }
               >
                 {generatingDocumentId === documentRow.id ? "Generation..." : "Exercices IA"}
+              </ElevateButton>
+
+              <ElevateButton
+                size="sm"
+                variant="outline"
+                onClick={() => onRegenerateCourseExercises(documentRow)}
+                disabled={
+                  busy
+                  || regeneratingDocumentId === documentRow.id
+                  || generatingDocumentId === documentRow.id
+                  || !documentRow.sharedClassIds.length
+                  || !documentRow.topicKey
+                  || !documentRow.materialType
+                  || !documentRow.hasSourceText
+                }
+              >
+                {regeneratingDocumentId === documentRow.id ? "Regeneration..." : "Regenerer"}
               </ElevateButton>
 
               <button
@@ -527,7 +590,12 @@ export default function DocumentsPage() {
                 onClick={() => onDeleteDocument(documentRow)}
                 className="h-[34px] rounded-lg bg-watermelon/10 px-3 font-sans text-[12px] font-semibold text-watermelon cursor-pointer hover:bg-watermelon/20 transition-colors shrink-0"
                 title="Supprimer"
-                disabled={busy || generatingDocumentId === documentRow.id || savingDocumentId === documentRow.id}
+                disabled={
+                  busy
+                  || generatingDocumentId === documentRow.id
+                  || regeneratingDocumentId === documentRow.id
+                  || savingDocumentId === documentRow.id
+                }
               >
                 Supprimer
               </button>
@@ -594,7 +662,11 @@ export default function DocumentsPage() {
                     size="sm"
                     variant="primary"
                     onClick={() => onSaveDocument(documentRow)}
-                    disabled={savingDocumentId === documentRow.id}
+                    disabled={
+                      savingDocumentId === documentRow.id
+                      || generatingDocumentId === documentRow.id
+                      || regeneratingDocumentId === documentRow.id
+                    }
                   >
                     {savingDocumentId === documentRow.id ? "Enregistrement..." : "Enregistrer"}
                   </ElevateButton>
@@ -603,7 +675,11 @@ export default function DocumentsPage() {
                     size="sm"
                     variant="ghost"
                     onClick={() => setEditingDocumentId(null)}
-                    disabled={savingDocumentId === documentRow.id}
+                    disabled={
+                      savingDocumentId === documentRow.id
+                      || generatingDocumentId === documentRow.id
+                      || regeneratingDocumentId === documentRow.id
+                    }
                   >
                     Annuler
                   </ElevateButton>

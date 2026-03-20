@@ -69,7 +69,7 @@ export async function POST(request: Request) {
     return badRequest("Cet élève n'est pas inscrit activement dans cette classe.")
   }
 
-  await adminDb.collection("profiles").doc(studentId).update({
+  await enrollmentSnap.docs[0].ref.update({
     cefr_level: cefrLevel,
     updated_at: FieldValue.serverTimestamp(),
   })

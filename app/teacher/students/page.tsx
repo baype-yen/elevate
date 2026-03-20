@@ -355,7 +355,7 @@ export default function StudentsPage() {
 
     const selectedLevel = (levelDrafts[student.id] || student.level || "B1").toUpperCase()
     if (selectedLevel === student.level) {
-      setLevelSuccess(`Le niveau de ${student.name} est déjà ${selectedLevel}.`)
+      setLevelSuccess(`Le niveau de ${student.name} (${student.className}) est déjà ${selectedLevel}.`)
       setLevelError(null)
       return
     }
@@ -384,7 +384,7 @@ export default function StudentsPage() {
         throw new Error(payload.error || "Impossible de mettre à jour le niveau de l'élève.")
       }
 
-      setLevelSuccess(`Niveau mis à jour pour ${student.name} : ${payload.cefrLevel || selectedLevel}.`)
+      setLevelSuccess(`Niveau mis à jour pour ${student.name} (${student.className}) : ${payload.cefrLevel || selectedLevel}.`)
       await loadStudents()
     } catch (error: any) {
       setLevelError(error?.message || "Impossible de mettre à jour le niveau de l'élève.")
@@ -436,6 +436,8 @@ export default function StudentsPage() {
   if (loading || !data) {
     return <div className="font-sans text-sm text-text-mid">Chargement des élèves...</div>
   }
+
+  const showClassContext = !Array.isArray(selectedClass) && selectedClass === "all"
 
   return (
     <div className="flex flex-col gap-4">
@@ -584,7 +586,10 @@ export default function StudentsPage() {
                 )}>
                   {s.initials}
                 </div>
-                <div className="font-sans text-sm font-semibold text-text-dark">{s.name}</div>
+                <div>
+                  <div className="font-sans text-sm font-semibold text-text-dark">{s.name}</div>
+                  {showClassContext && <div className="font-sans text-[11px] text-text-light">{s.className}</div>}
+                </div>
               </div>
               <div>
                 {s.canEditLevel ? (

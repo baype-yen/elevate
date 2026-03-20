@@ -197,6 +197,11 @@ export default function ExercisesPage() {
     [selectedWritingId, writingAssignments],
   )
 
+  const personalizedExercises = useMemo(
+    () => data.personalizedExercises.filter((exercise) => (exercise as any).sourceKind !== "course_document"),
+    [data.personalizedExercises],
+  )
+
   useEffect(() => {
     if (!requestedAssignmentId || !data.assignments.length) return
     const target = data.assignments.find((assignment) => assignment.id === requestedAssignmentId)
@@ -223,9 +228,9 @@ export default function ExercisesPage() {
   useEffect(() => {
     setExerciseDrafts((previous) => {
       const next = { ...previous }
-      const knownIds = new Set(data.personalizedExercises.map((exercise) => exercise.id))
+      const knownIds = new Set(personalizedExercises.map((exercise) => exercise.id))
 
-      for (const exercise of data.personalizedExercises) {
+      for (const exercise of personalizedExercises) {
         if (typeof next[exercise.id] !== "string") {
           next[exercise.id] = exercise.responseText || ""
         }
@@ -242,9 +247,9 @@ export default function ExercisesPage() {
 
     setOpenExerciseId((previous) => {
       if (!previous) return previous
-      return data.personalizedExercises.some((exercise) => exercise.id === previous) ? previous : null
+      return personalizedExercises.some((exercise) => exercise.id === previous) ? previous : null
     })
-  }, [data.personalizedExercises])
+  }, [personalizedExercises])
 
   const openDocument = async (document: SubmissionDocumentPayload, download = false) => {
     try {
@@ -504,7 +509,7 @@ export default function ExercisesPage() {
     }
   }
 
-  const hasReadOnlyPersonalized = data.personalizedExercises.some((exercise) => !!exercise.readOnly)
+  const hasReadOnlyPersonalized = personalizedExercises.some((exercise) => !!exercise.readOnly)
 
   const renderPersonalizedExercises = () => (
     <div className="bg-card rounded-[20px] border border-gray-mid p-6">
@@ -515,7 +520,7 @@ export default function ExercisesPage() {
         </div>
       )}
       <div className="flex flex-col gap-2.5">
-        {data.personalizedExercises.map((exercise) => (
+        {personalizedExercises.map((exercise) => (
           <div key={exercise.id} className="rounded-xl border border-gray-light bg-off-white p-4">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
@@ -587,7 +592,7 @@ export default function ExercisesPage() {
             )}
           </div>
         ))}
-        {!data.personalizedExercises.length && (
+        {!personalizedExercises.length && (
           <div className="font-sans text-sm text-text-mid">Aucun exercice personnalisé pour le moment.</div>
         )}
       </div>

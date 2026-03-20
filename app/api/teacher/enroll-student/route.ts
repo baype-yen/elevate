@@ -9,6 +9,13 @@ type EnrollStudentPayload = {
   classId?: string
 }
 
+const allowedLevels = new Set(["a1", "a2", "b1", "b2", "c1", "c2"])
+
+function normalizeLevel(level: string | null | undefined) {
+  const normalized = (level || "b1").trim().toLowerCase()
+  return allowedLevels.has(normalized) ? normalized : "b1"
+}
+
 function badRequest(message: string) {
   return NextResponse.json({ error: message }, { status: 400 })
 }
@@ -168,10 +175,15 @@ export async function POST(request: Request) {
     .limit(1)
     .get()
 
+  const classLevel = normalizeLevel(classRow.cefr_level)
+  const existingEnrollmentData = existingEnrollment.empty ? null : existingEnrollment.docs[0].data()
+  const enrollmentLevel = normalizeLevel(existingEnrollmentData?.cefr_level || classLevel)
+
   try {
     if (!existingEnrollment.empty) {
       await existingEnrollment.docs[0].ref.update({
         status: "active",
+        cefr_level: enrollmentLevel,
         left_at: null,
         updated_at: FieldValue.serverTimestamp(),
       })
@@ -180,6 +192,7 @@ export async function POST(request: Request) {
         class_id: classId,
         student_id: studentId,
         status: "active",
+        cefr_level: enrollmentLevel,
         left_at: null,
         created_at: FieldValue.serverTimestamp(),
         updated_at: FieldValue.serverTimestamp(),

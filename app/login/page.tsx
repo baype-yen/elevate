@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { useState, type FormEvent } from "react"
 import { useRouter } from "next/navigation"
-import { signInWithEmailAndPassword } from "firebase/auth"
+import { signInWithEmailAndPassword, signOut } from "firebase/auth"
 import { doc, getDoc } from "firebase/firestore"
 import { ElevateButton, InputField } from "@/components/elevate/shared"
 import { Icons } from "@/components/elevate/icons"
@@ -45,13 +45,24 @@ export default function LoginPage() {
       const credential = await signInWithEmailAndPassword(auth, normalizedEmail, trimmedPassword)
       const user = credential.user
 
-      const idToken = await user.getIdToken()
-      document.cookie = `__session=${idToken}; path=/; max-age=${60 * 60 * 24 * 14}; SameSite=Lax`
-
       const profileSnap = await getDoc(doc(db, "profiles", user.uid))
       const role = profileSnap.exists() ? profileSnap.data()?.default_role || "student" : "student"
 
-      router.push(role === "teacher" ? getSafeTeacherNextPath() || "/teacher" : "/student")
+      if (role !== "teacher") {
+        document.cookie = "__session=; path=/; max-age=0; SameSite=Lax"
+        try {
+          await signOut(auth)
+        } catch {
+          // Ignore sign-out errors when blocking non-teacher access
+        }
+        setError("Cet espace est réservé aux enseignants. Utilisez la connexion élève.")
+        setLoading(false)
+        return
+      }
+
+      const idToken = await user.getIdToken()
+      document.cookie = `__session=${idToken}; path=/; max-age=${60 * 60 * 24 * 14}; SameSite=Lax`
+      router.push(getSafeTeacherNextPath() || "/teacher")
     } catch {
       setError("Identifiants invalides. Vérifiez l'e-mail et le mot de passe saisis.")
       setLoading(false)
