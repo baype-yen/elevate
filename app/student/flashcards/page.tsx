@@ -1,347 +1,339 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Icons } from "@/components/elevate/icons"
 import { ElevateButton } from "@/components/elevate/shared"
-import { cn } from "@/lib/utils"
-import { db } from "@/lib/firebase/client"
+import { auth } from "@/lib/firebase/client"
 import { useAppContext } from "@/hooks/use-app-context"
-import {
-  collection,
-  query,
-  where,
-  orderBy,
-  getDocs,
-  getDoc,
-  doc,
-  updateDoc,
-} from "firebase/firestore"
-import type { Flashcard } from "@/lib/flashcards/schema"
+import { cn } from "@/lib/utils"
 
-type FlashcardRow = Flashcard & { assignmentTitle?: string }
+type AdaptiveCategory = "vocabulary" | "grammar" | "tense"
+
+type AdaptiveCard = {
+  id: string
+  question: string
+  options: string[]
+  category: AdaptiveCategory
+  difficultyLevel: string
+  createdAt: string
+}
+
+type AdaptiveProgress = {
+  levels: Record<AdaptiveCategory, string>
+  streaks: Record<AdaptiveCategory, number>
+}
+
+type AnswerResult = {
+  correct: boolean
+  category: AdaptiveCategory
+  selectedOption: string
+  correctAnswer: string
+  explanation: string
+  previousLevel: string
+  nextLevel: string
+}
+
+type SessionResponse = {
+  cards: AdaptiveCard[]
+  progress: AdaptiveProgress
+}
+
+type AnswerResponse = {
+  result: AnswerResult
+  cards: AdaptiveCard[]
+  progress: AdaptiveProgress
+}
+
+function emptyProgress(): AdaptiveProgress {
+  return {
+    levels: {
+      vocabulary: "B1",
+      grammar: "B1",
+      tense: "B1",
+    },
+    streaks: {
+      vocabulary: 0,
+      grammar: 0,
+      tense: 0,
+    },
+  }
+}
+
+function categoryLabel(category: AdaptiveCategory) {
+  if (category === "vocabulary") return "Vocabulaire"
+  if (category === "grammar") return "Grammaire"
+  return "Temps verbaux"
+}
+
+function categoryAccent(category: AdaptiveCategory) {
+  if (category === "vocabulary") return "bg-abricot/15 text-abricot-dark border-abricot/30"
+  if (category === "grammar") return "bg-watermelon/10 text-watermelon border-watermelon/30"
+  return "bg-violet/10 text-violet border-violet/30"
+}
+
+function normalizeAdaptiveCard(row: any): AdaptiveCard | null {
+  if (!row || typeof row !== "object") return null
+
+  const id = typeof row.id === "string" ? row.id : ""
+  const question = typeof row.question === "string" ? row.question.trim() : ""
+  const options = Array.isArray(row.options)
+    ? row.options
+      .filter((option: unknown) => typeof option === "string")
+      .map((option: string) => option.trim())
+      .filter(Boolean)
+    : []
+
+  const category = row.category === "vocabulary" || row.category === "grammar" || row.category === "tense"
+    ? row.category
+    : null
+
+  if (!id || !question || !category || options.length < 2) return null
+
+  const difficultyLevel = typeof row.difficultyLevel === "string"
+    ? row.difficultyLevel.toUpperCase()
+    : "B1"
+
+  const createdAt = typeof row.createdAt === "string" ? row.createdAt : new Date().toISOString()
+
+  return {
+    id,
+    question,
+    options,
+    category,
+    difficultyLevel,
+    createdAt,
+  }
+}
+
+function normalizeProgress(raw: any): AdaptiveProgress {
+  const levels = raw?.levels && typeof raw.levels === "object" ? raw.levels : {}
+  const streaks = raw?.streaks && typeof raw.streaks === "object" ? raw.streaks : {}
+
+  return {
+    levels: {
+      vocabulary: typeof levels.vocabulary === "string" ? levels.vocabulary.toUpperCase() : "B1",
+      grammar: typeof levels.grammar === "string" ? levels.grammar.toUpperCase() : "B1",
+      tense: typeof levels.tense === "string" ? levels.tense.toUpperCase() : "B1",
+    },
+    streaks: {
+      vocabulary: typeof streaks.vocabulary === "number" ? streaks.vocabulary : 0,
+      grammar: typeof streaks.grammar === "number" ? streaks.grammar : 0,
+      tense: typeof streaks.tense === "number" ? streaks.tense : 0,
+    },
+  }
+}
+
+async function authHeaders() {
+  const idToken = await auth.currentUser?.getIdToken()
+  if (!idToken) throw new Error("Session invalide. Reconnectez-vous.")
+
+  return {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${idToken}`,
+  }
+}
 
 export default function FlashcardsPage() {
   const { context, loading } = useAppContext()
-  const [cards, setCards] = useState<FlashcardRow[]>([])
-  const [filter, setFilter] = useState<"learning" | "known">("learning")
-  const [loadingCards, setLoadingCards] = useState(true)
+  const [cards, setCards] = useState<AdaptiveCard[]>([])
+  const [progress, setProgress] = useState<AdaptiveProgress>(emptyProgress())
+  const [selectedOption, setSelectedOption] = useState("")
+  const [busy, setBusy] = useState(false)
+  const [loadingDeck, setLoadingDeck] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [result, setResult] = useState<AnswerResult | null>(null)
 
-  // Review mode state
-  const [reviewing, setReviewing] = useState(false)
-  const [reviewCards, setReviewCards] = useState<FlashcardRow[]>([])
-  const [reviewIndex, setReviewIndex] = useState(0)
-  const [revealed, setRevealed] = useState(false)
-  const [studentAnswer, setStudentAnswer] = useState("")
-  const [reviewResults, setReviewResults] = useState<{ known: number; learning: number }>({ known: 0, learning: 0 })
-  const [reviewDone, setReviewDone] = useState(false)
+  const currentCard = cards[0] || null
+
+  const orderedProgress = useMemo(
+    () => [
+      { key: "vocabulary" as const, label: "Vocabulaire" },
+      { key: "grammar" as const, label: "Grammaire" },
+      { key: "tense" as const, label: "Temps verbaux" },
+    ],
+    [],
+  )
+
+  const loadSession = async () => {
+    if (!context) return
+
+    try {
+      setLoadingDeck(true)
+      setError(null)
+
+      const response = await fetch("/api/student/flashcards/session", {
+        method: "POST",
+        headers: await authHeaders(),
+      })
+
+      const payload = await response.json()
+      if (!response.ok) {
+        throw new Error(payload?.error || "Impossible de charger le deck adaptatif.")
+      }
+
+      const data = payload as SessionResponse
+      const nextCards = (data.cards || [])
+        .map(normalizeAdaptiveCard)
+        .filter((row): row is AdaptiveCard => !!row)
+
+      setCards(nextCards)
+      setProgress(normalizeProgress(data.progress))
+      setSelectedOption("")
+      setResult(null)
+    } catch (e: any) {
+      setCards([])
+      setError(e?.message || "Impossible de charger les flashcards adaptatives.")
+    } finally {
+      setLoadingDeck(false)
+    }
+  }
 
   useEffect(() => {
-    if (!context) return
-    loadCards()
-  }, [context, filter])
+    loadSession()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [context?.userId])
 
-  const loadCards = async () => {
-    if (!context) return
-    setLoadingCards(true)
+  const submitCurrentAnswer = async () => {
+    if (!currentCard || !selectedOption) {
+      setError("Choisissez une reponse avant de valider.")
+      return
+    }
+
     try {
-      const q = query(
-        collection(db, "flashcards"),
-        where("student_id", "==", context.userId),
-        where("status", "==", filter),
-        orderBy("created_at", "desc"),
-      )
-      const snap = await getDocs(q)
-      const rows: FlashcardRow[] = snap.docs.map((d) => ({ id: d.id, ...d.data() } as FlashcardRow))
+      setBusy(true)
+      setError(null)
 
-      // Fetch assignment titles for context
-      const assignmentIds = [...new Set(rows.map((r) => r.assignment_id).filter(Boolean))]
-      const titleMap: Record<string, string> = {}
-      for (const aid of assignmentIds) {
-        try {
-          const aSnap = await getDoc(doc(db, "assignments", aid))
-          if (aSnap.exists()) titleMap[aid] = aSnap.data().title || "Devoir"
-        } catch { /* ignore */ }
-      }
-      for (const row of rows) {
-        row.assignmentTitle = titleMap[row.assignment_id] || "Devoir"
+      const response = await fetch("/api/student/flashcards/answer", {
+        method: "POST",
+        headers: await authHeaders(),
+        body: JSON.stringify({
+          card_id: currentCard.id,
+          selected_option: selectedOption,
+        }),
+      })
+
+      const payload = await response.json()
+      if (!response.ok) {
+        throw new Error(payload?.error || "Impossible de corriger la reponse.")
       }
 
-      setCards(rows)
+      const data = payload as AnswerResponse
+      const nextCards = (data.cards || [])
+        .map(normalizeAdaptiveCard)
+        .filter((row): row is AdaptiveCard => !!row)
+
+      setCards(nextCards)
+      setProgress(normalizeProgress(data.progress))
+      setResult(data.result)
+      setSelectedOption("")
+    } catch (e: any) {
+      setError(e?.message || "Erreur lors de la validation.")
     } finally {
-      setLoadingCards(false)
+      setBusy(false)
     }
-  }
-
-  const startReview = () => {
-    if (!cards.length) return
-    setReviewCards(cards)
-    setReviewIndex(0)
-    setRevealed(false)
-    setStudentAnswer("")
-    setReviewResults({ known: 0, learning: 0 })
-    setReviewDone(false)
-    setReviewing(true)
-  }
-
-  const handleAssessment = async (status: "learning" | "known") => {
-    const card = reviewCards[reviewIndex]
-    const now = new Date().toISOString()
-
-    // Update Firestore
-    await updateDoc(doc(db, "flashcards", card.id), {
-      status,
-      reviewed_at: now,
-    })
-
-    // Update local state
-    setReviewResults((prev) => ({
-      known: prev.known + (status === "known" ? 1 : 0),
-      learning: prev.learning + (status === "learning" ? 1 : 0),
-    }))
-
-    // Advance or finish
-    if (reviewIndex + 1 < reviewCards.length) {
-      setReviewIndex(reviewIndex + 1)
-      setRevealed(false)
-      setStudentAnswer("")
-    } else {
-      setReviewDone(true)
-    }
-  }
-
-  const exitReview = () => {
-    setReviewing(false)
-    setFilter("learning")
-    loadCards()
-  }
-
-  const categoryLabel = (cat: string) => {
-    const labels: Record<string, string> = {
-      grammar: "Grammaire",
-      vocabulary: "Vocabulaire",
-      syntax: "Syntaxe",
-      structure: "Structure",
-    }
-    return labels[cat] || cat
   }
 
   if (loading || !context) {
     return <div className="font-sans text-sm text-text-mid">Chargement...</div>
   }
 
-  // Review mode — full-screen card review
-  if (reviewing) {
-    if (reviewDone) {
-      return (
-        <div className="max-w-lg mx-auto py-12 text-center">
-          <div className="text-4xl mb-4">&#127881;</div>
-          <h2 className="font-serif text-2xl font-bold text-navy mb-4">Révision terminée !</h2>
-          <div className="flex justify-center gap-6 mb-8">
-            <div className="text-center">
-              <div className="text-2xl font-bold text-green-600">{reviewResults.known}</div>
-              <div className="font-sans text-sm text-text-mid">Maîtrisées</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-amber-600">{reviewResults.learning}</div>
-              <div className="font-sans text-sm text-text-mid">À revoir</div>
-            </div>
+  return (
+    <div className="flex flex-col gap-5 max-w-[920px]">
+      <div className="bg-card rounded-[20px] border border-gray-mid p-6">
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <h3 className="font-serif text-xl font-bold text-navy mb-1">Flashcards adaptatives</h3>
+            <p className="font-sans text-[13px] text-text-mid">
+              QCM automatiques par niveau CECRL (A1-C2) sur vocabulaire, grammaire et temps verbaux.
+            </p>
           </div>
-          <ElevateButton variant="primary" onClick={exitReview}>
-            Retour aux flashcards
+          <ElevateButton variant="outline" size="sm" onClick={loadSession} disabled={loadingDeck || busy}>
+            Regenerer le deck
           </ElevateButton>
         </div>
-      )
-    }
 
-    const currentCard = reviewCards[reviewIndex]
-    return (
-      <div className="max-w-lg mx-auto py-6">
-        {/* Progress */}
-        <div className="flex justify-between items-center mb-3">
-          <span className="font-sans text-sm text-text-mid">{reviewIndex + 1} / {reviewCards.length}</span>
-          <span className="font-sans text-sm text-text-mid">{categoryLabel(currentCard.category)}</span>
-        </div>
-        <div className="h-1 bg-gray-200 rounded-full mb-6">
-          <div
-            className="h-1 bg-navy rounded-full transition-all"
-            style={{ width: `${((reviewIndex + 1) / reviewCards.length) * 100}%` }}
-          />
-        </div>
-
-        {/* Card */}
-        <div className="bg-white border-2 border-gray-200 rounded-xl overflow-hidden shadow-sm">
-          {/* Front */}
-          <div className={cn("p-8 text-center", revealed && "border-b border-dashed border-gray-200")}>
-            <div className="uppercase text-xs tracking-widest text-text-light mb-3">
-              {currentCard.card_type === "fill_in_blank" ? "Complétez" : currentCard.card_type === "explanation" ? "Question" : "Corrigez"}
-            </div>
-            <div className="font-sans text-lg font-medium text-navy">{currentCard.front}</div>
-            {currentCard.hint && (
-              <div className="font-sans text-sm text-text-mid mt-2">Indice : {currentCard.hint}</div>
-            )}
-          </div>
-
-          {/* Student answer input */}
-          {!revealed && (
-            <div className="px-8 pb-6 pt-4">
-              <textarea
-                value={studentAnswer}
-                onChange={(e) => setStudentAnswer(e.target.value)}
-                placeholder="Écris ta correction ici..."
-                className="w-full min-h-[80px] rounded-lg border-2 border-gray-200 px-3 py-2.5 font-sans text-sm text-text-dark placeholder:text-text-light outline-none focus:border-navy resize-none"
-              />
-              <div className="flex gap-2 mt-3">
-                <button
-                  onClick={() => setRevealed(true)}
-                  className="flex-1 bg-navy text-white border-none py-2.5 rounded-lg font-sans text-sm font-medium cursor-pointer hover:bg-navy-mid transition-colors"
-                >
-                  Vérifier
-                </button>
-                <button
-                  onClick={() => setRevealed(true)}
-                  className="px-4 bg-gray-100 text-text-mid border-none py-2.5 rounded-lg font-sans text-sm cursor-pointer hover:bg-gray-200 transition-colors"
-                >
-                  Passer
-                </button>
+        <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-2.5">
+          {orderedProgress.map((item) => (
+            <div key={item.key} className="rounded-lg border border-gray-light bg-off-white px-3 py-2.5">
+              <div className="font-sans text-[12px] text-text-light">{item.label}</div>
+              <div className="mt-1 flex items-center justify-between">
+                <span className="font-sans text-sm font-bold text-navy">{progress.levels[item.key]}</span>
+                <span className="font-sans text-xs text-text-mid">Serie: {progress.streaks[item.key]}</span>
               </div>
-            </div>
-          )}
-
-          {/* Back — revealed */}
-          {revealed && (
-            <div className="p-8 bg-gray-50">
-              {studentAnswer.trim() && (
-                <div className="mb-4">
-                  <div className="uppercase text-xs tracking-widest text-text-light mb-2">Ta réponse</div>
-                  <div className="font-sans text-sm text-text-dark bg-white rounded-lg p-3 border border-gray-200">{studentAnswer}</div>
-                </div>
-              )}
-              <div className="text-center">
-                <div className="uppercase text-xs tracking-widest text-text-light mb-3">Correction</div>
-                <div className="font-sans text-lg font-medium text-green-700">{currentCard.back}</div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Assessment buttons */}
-        {revealed && (
-          <div className="flex gap-3 mt-5">
-            <button
-              onClick={() => handleAssessment("learning")}
-              className="flex-1 bg-amber-50 text-amber-800 border-none py-3 rounded-lg font-sans text-sm font-medium cursor-pointer hover:bg-amber-100 transition-colors"
-            >
-              Encore à réviser
-            </button>
-            <button
-              onClick={() => handleAssessment("known")}
-              className="flex-1 bg-green-50 text-green-800 border-none py-3 rounded-lg font-sans text-sm font-medium cursor-pointer hover:bg-green-100 transition-colors"
-            >
-              Je sais
-            </button>
-          </div>
-        )}
-
-        {/* Exit */}
-        <button
-          onClick={exitReview}
-          className="mt-4 w-full font-sans text-sm text-text-mid hover:text-navy cursor-pointer bg-transparent border-none py-2"
-        >
-          Quitter la révision
-        </button>
-      </div>
-    )
-  }
-
-  // List mode — main flashcard page
-  return (
-    <div>
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="font-serif text-2xl font-bold text-navy">Mes Flashcards</h1>
-        {cards.length > 0 && filter === "learning" && (
-          <div className="flex gap-2">
-            <span className="bg-amber-50 text-amber-800 px-3 py-1 rounded-full font-sans text-sm">
-              {cards.length} à réviser
-            </span>
-          </div>
-        )}
-      </div>
-
-      {/* Filter tabs */}
-      <div className="flex gap-2 mb-5">
-        <button
-          onClick={() => setFilter("learning")}
-          className={cn(
-            "px-4 py-2 rounded-lg font-sans text-sm font-medium cursor-pointer border-none transition-colors",
-            filter === "learning" ? "bg-navy text-white" : "bg-gray-100 text-text-mid hover:bg-gray-200",
-          )}
-        >
-          À réviser
-        </button>
-        <button
-          onClick={() => setFilter("known")}
-          className={cn(
-            "px-4 py-2 rounded-lg font-sans text-sm font-medium cursor-pointer border-none transition-colors",
-            filter === "known" ? "bg-navy text-white" : "bg-gray-100 text-text-mid hover:bg-gray-200",
-          )}
-        >
-          Maîtrisées
-        </button>
-      </div>
-
-      {/* Start review button */}
-      {filter === "learning" && cards.length > 0 && (
-        <button
-          onClick={startReview}
-          className="w-full bg-navy text-white rounded-xl p-5 mb-6 cursor-pointer border-none hover:bg-navy-mid transition-colors"
-        >
-          <div className="font-sans text-base font-semibold">Commencer la révision</div>
-          <div className="font-sans text-sm opacity-80 mt-1">{cards.length} carte(s) à réviser</div>
-        </button>
-      )}
-
-      {/* Empty state */}
-      {!loadingCards && cards.length === 0 && (
-        <div className="text-center py-16">
-          <Icons.Layers className="mx-auto mb-4 text-text-light" />
-          <p className="font-sans text-sm text-text-mid">
-            {filter === "learning"
-              ? "Pas encore de flashcards. Tes enseignants peuvent en générer après avoir corrigé tes devoirs."
-              : "Aucune carte maîtrisée pour le moment."}
-          </p>
-        </div>
-      )}
-
-      {/* Loading */}
-      {loadingCards && (
-        <div className="font-sans text-sm text-text-mid py-8 text-center">Chargement des flashcards...</div>
-      )}
-
-      {/* Card list */}
-      {!loadingCards && cards.length > 0 && (
-        <div className="flex flex-col gap-2">
-          {cards.map((card) => (
-            <div
-              key={card.id}
-              className="bg-white border border-gray-200 rounded-xl p-4 flex items-center justify-between"
-            >
-              <div className="min-w-0 flex-1">
-                <div className="font-sans text-sm font-medium text-navy truncate">{card.front}</div>
-                <div className="font-sans text-xs text-text-mid mt-1">
-                  {categoryLabel(card.category)} · {card.assignmentTitle || "Devoir"}
-                </div>
-              </div>
-              <span
-                className={cn(
-                  "ml-3 px-2 py-0.5 rounded-full font-sans text-xs whitespace-nowrap",
-                  card.status === "learning" ? "bg-amber-50 text-amber-800" : "bg-green-50 text-green-800",
-                )}
-              >
-                {card.status === "learning" ? "À réviser" : "Maîtrisée"}
-              </span>
             </div>
           ))}
+        </div>
+      </div>
+
+      {error && <div className="font-sans text-sm text-watermelon">{error}</div>}
+
+      {loadingDeck ? (
+        <div className="font-sans text-sm text-text-mid">Generation du deck adaptatif...</div>
+      ) : !currentCard ? (
+        <div className="bg-card rounded-[20px] border border-gray-mid p-7 text-center">
+          <Icons.Layers className="mx-auto mb-3 text-text-light" />
+          <div className="font-sans text-sm text-text-mid mb-3">
+            Le deck est vide pour le moment. Clique sur "Regenerer le deck" pour creer de nouvelles questions.
+          </div>
+          <ElevateButton variant="primary" onClick={loadSession} disabled={busy}>Creer mon deck</ElevateButton>
+        </div>
+      ) : (
+        <div className="bg-card rounded-[20px] border border-gray-mid p-6 flex flex-col gap-4">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="font-sans text-sm text-text-mid">{cards.length} question(s) active(s) dans ton deck</div>
+            <div className={cn("px-2.5 py-1 rounded-md border font-sans text-xs font-semibold", categoryAccent(currentCard.category))}>
+              {categoryLabel(currentCard.category)} - {currentCard.difficultyLevel}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-gray-light bg-off-white p-4">
+            <div className="font-sans text-[16px] font-semibold text-navy leading-relaxed">{currentCard.question}</div>
+
+            <div className="mt-3 flex flex-col gap-2">
+              {currentCard.options.map((option) => (
+                <label key={`${currentCard.id}:${option}`} className="rounded-lg border border-gray-mid bg-card px-3 py-2 flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name={`adaptive-${currentCard.id}`}
+                    checked={selectedOption === option}
+                    onChange={() => setSelectedOption(option)}
+                    className="mt-0.5 h-4 w-4 accent-navy"
+                    disabled={busy}
+                  />
+                  <span className="font-sans text-sm text-text-dark leading-relaxed">{option}</span>
+                </label>
+              ))}
+            </div>
+
+            <div className="mt-4 flex items-center gap-2">
+              <ElevateButton variant="primary" onClick={submitCurrentAnswer} disabled={busy || !selectedOption}>
+                {busy ? "Validation..." : "Valider ma reponse"}
+              </ElevateButton>
+              <ElevateButton variant="ghost" onClick={() => setSelectedOption("")} disabled={busy || !selectedOption}>
+                Reinitialiser
+              </ElevateButton>
+            </div>
+          </div>
+
+          {result && (
+            <div className={cn(
+              "rounded-xl border px-4 py-3",
+              result.correct
+                ? "border-violet/30 bg-violet/10"
+                : "border-abricot/30 bg-abricot/10",
+            )}>
+              <div className={cn("font-sans text-sm font-semibold mb-1", result.correct ? "text-violet" : "text-abricot-dark")}>
+                {result.correct ? "Bonne reponse ! Niveau augmente." : "Pas encore. On renforce ce point avec de nouvelles cartes."}
+              </div>
+              <div className="font-sans text-sm text-text-dark mb-1">
+                Reponse correcte: <span className="font-semibold">{result.correctAnswer}</span>
+              </div>
+              <div className="font-sans text-sm text-text-mid leading-relaxed">{result.explanation}</div>
+              <div className="font-sans text-xs text-text-light mt-2">
+                {categoryLabel(result.category)}: {result.previousLevel} to {result.nextLevel}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

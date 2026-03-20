@@ -15,6 +15,12 @@ import {
   Timestamp,
   type Firestore,
 } from "firebase/firestore"
+import {
+  courseMaterialTypeLabel,
+  courseTopicLabel,
+  parseCourseMaterialType,
+  parseCourseTopic,
+} from "@/lib/course-content/config"
 
 function upLevel(level: string | null | undefined) {
   return (level || "b1").toUpperCase()
@@ -55,6 +61,15 @@ export type SubmissionPayload = {
   document: SubmissionDocumentPayload | null
 }
 
+type CourseExerciseQuestionPayload = {
+  id: string
+  prompt: string
+  questionType: "single_choice" | "short_answer"
+  options: string[]
+}
+
+type CourseExerciseAnswersPayload = Record<string, string>
+
 function parseSubmissionPayload(content: any): SubmissionPayload {
   const payload = content && typeof content === "object" ? content : {}
   const text = typeof payload.text === "string" ? payload.text : ""
@@ -75,6 +90,67 @@ function parseSubmissionPayload(content: any): SubmissionPayload {
   }
 
   return { text, document }
+}
+
+function parseCourseExerciseAnswers(payload: any): CourseExerciseAnswersPayload {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return {}
+
+  const answers: CourseExerciseAnswersPayload = {}
+  for (const [key, value] of Object.entries(payload)) {
+    if (typeof key !== "string") continue
+    if (typeof value !== "string") continue
+    const normalizedKey = key.trim()
+    const normalizedValue = value.trim()
+    if (!normalizedKey || !normalizedValue) continue
+    answers[normalizedKey] = normalizedValue
+  }
+
+  return answers
+}
+
+function parseCourseExerciseQuestions(rawQuestions: any): CourseExerciseQuestionPayload[] {
+  if (!Array.isArray(rawQuestions)) return []
+
+  const questions: CourseExerciseQuestionPayload[] = []
+
+  for (const item of rawQuestions) {
+    if (!item || typeof item !== "object") continue
+
+    const prompt = typeof (item as any).prompt === "string"
+      ? (item as any).prompt.trim()
+      : ""
+    if (prompt.length < 6) continue
+
+    const questionType = (item as any).question_type === "single_choice"
+      ? "single_choice"
+      : (item as any).question_type === "short_answer"
+      ? "short_answer"
+      : null
+
+    if (!questionType) continue
+
+    const id = typeof (item as any).id === "string" && (item as any).id.trim()
+      ? (item as any).id.trim()
+      : `q${questions.length + 1}`
+
+    const options = questionType === "single_choice" && Array.isArray((item as any).options)
+      ? (item as any).options
+        .filter((opt: unknown) => typeof opt === "string")
+        .map((opt: string) => opt.trim())
+        .filter(Boolean)
+      : []
+
+    if (questionType === "single_choice" && options.length < 2) continue
+
+    questions.push({
+      id,
+      prompt,
+      questionType,
+      options,
+    })
+  }
+
+  return questions
 }
 
 function normalizeAssignmentType(type: string | null | undefined) {
@@ -138,6 +214,7 @@ export type TeacherClassSummary = {
 export type TeacherStudentRow = {
   id: string
   classId: string
+  className: string
   studentId: string | null
   name: string
   initials: string
@@ -603,19 +680,26 @@ export async function fetchTeacherStudentsData(
   }
 
   const classLevelMap = new Map(classes.map((c: any) => [c.id, upLevel(c.cefr_level)]))
+  const classNameById = new Map(classes.map((c: any) => [c.id, c.name]))
+  const assignmentToClass = new Map(assignments.map((a: any) => [a.id, a.class_id]))
 
   const studentScoreMap = new Map<string, number[]>()
   const studentLastMap = new Map<string, string>()
   for (const s of submissions) {
+    const submissionClassId = assignmentToClass.get(s.assignment_id)
+    if (!submissionClassId || !s.student_id) continue
+    const statKey = `${submissionClassId}:${s.student_id}`
+
     if (typeof s.score === "number") {
-      const arr = studentScoreMap.get(s.student_id) || []
+      const arr = studentScoreMap.get(statKey) || []
       arr.push(s.score)
-      studentScoreMap.set(s.student_id, arr)
+      studentScoreMap.set(statKey, arr)
     }
+
     const submittedAt = toISOString(s.submitted_at)
     if (submittedAt) {
-      const prev = studentLastMap.get(s.student_id)
-      if (!prev || new Date(submittedAt) > new Date(prev)) studentLastMap.set(s.student_id, submittedAt)
+      const prev = studentLastMap.get(statKey)
+      if (!prev || new Date(submittedAt) > new Date(prev)) studentLastMap.set(statKey, submittedAt)
     }
   }
 
@@ -624,6 +708,7 @@ export async function fetchTeacherStudentsData(
     return {
       id: `roster:${r.id}`,
       classId: r.class_id,
+      className: classNameById.get(r.class_id) || "Classe",
       studentId: null,
       name,
       initials: `${r.first_name[0] || ""}${r.last_name[0] || ""}`.toUpperCase(),
@@ -637,17 +722,20 @@ export async function fetchTeacherStudentsData(
   const enrolledList: TeacherStudentRow[] = enrollments.map((e: any) => {
     const profile = profileMap.get(e.student_id)
     const name = profile?.full_name || "Élève"
-    const scores = studentScoreMap.get(e.student_id) || []
+    const level = upLevel(e.cefr_level || profile?.cefr_level || classLevelMap.get(e.class_id) || "b1")
+    const statKey = `${e.class_id}:${e.student_id}`
+    const scores = studentScoreMap.get(statKey) || []
     const score = scores.length ? Math.round(scores.reduce((a: number, b: number) => a + b, 0) / scores.length) : 0
-    const lastDate = studentLastMap.get(e.student_id)
+    const lastDate = studentLastMap.get(statKey)
     const lastActive = lastDate ? new Date(lastDate).toLocaleDateString("fr-FR") : "Aucune activité"
     return {
-      id: `student:${e.student_id}`,
+      id: `student:${e.class_id}:${e.student_id}`,
       classId: e.class_id,
+      className: classNameById.get(e.class_id) || "Classe",
       studentId: e.student_id,
       name,
       initials: name.split(" ").map((p: string) => p[0]).join("").slice(0, 2).toUpperCase(),
-      level: upLevel(profile?.cefr_level),
+      level,
       score,
       lastActive,
       canEditLevel: true,
@@ -666,14 +754,18 @@ export async function fetchTeacherStudentsData(
   const merged = [...enrolledList, ...filteredRoster]
   const unique = new Map<string, TeacherStudentRow>()
   for (const student of merged) {
-    const key = student.studentId ? `student:${student.studentId}` : student.id
+    const key = student.studentId ? `student:${student.classId}:${student.studentId}` : student.id
     const existing = unique.get(key)
     if (!existing || (!existing.canEditLevel && student.canEditLevel)) {
       unique.set(key, student)
     }
   }
 
-  const students = Array.from(unique.values()).sort((a, b) => a.name.localeCompare(b.name, "fr"))
+  const students = Array.from(unique.values()).sort((a, b) => {
+    const classCompare = a.className.localeCompare(b.className, "fr")
+    if (classCompare !== 0) return classCompare
+    return a.name.localeCompare(b.name, "fr")
+  })
 
   return {
     className: classId ? classes?.[0]?.name || "Classe" : "Toutes les classes actives",
@@ -799,6 +891,9 @@ export async function fetchTeacherDocumentsData(db: Firestore, userId: string, s
     classes: classes.map((c: any) => ({ id: c.id, name: c.name })),
     documents: docs.map((d: any) => {
       const shared = sharedByDocument.get(d.id) || []
+      const topicKey = parseCourseTopic(d.course_topic)
+      const materialType = parseCourseMaterialType(d.course_material_type)
+
       return {
         id: d.id,
         name: d.name,
@@ -806,6 +901,11 @@ export async function fetchTeacherDocumentsData(db: Firestore, userId: string, s
         type: toFileType(d.mime_type),
         size: toFileSize(d.size_bytes),
         date: toLocaleDateFR(d.created_at),
+        topicKey,
+        topicLabel: topicKey ? courseTopicLabel(topicKey) : "Ressource hors topic",
+        materialType,
+        materialLabel: materialType ? courseMaterialTypeLabel(materialType) : "Non classé",
+        hasSourceText: typeof d.course_source_text === "string" && d.course_source_text.trim().length > 0,
         sharedClassIds: shared.map((s) => s.id),
         sharedClassNames: shared.map((s) => s.name),
       }
@@ -903,19 +1003,28 @@ export async function fetchStudentDocumentsData(db: Firestore, userId: string, s
     }
   }
 
-  return docs.map((d: any) => ({
-    id: d.id,
-    name: d.name,
-    filePath: d.file_path,
-    type: toFileType(d.mime_type),
-    size: toFileSize(d.size_bytes),
-    date: toLocaleDateFR(d.created_at),
-    sharedAt: lastSharedAtByDocument.get(d.id)
-      ? new Date(lastSharedAtByDocument.get(d.id)!).toLocaleDateString("fr-FR")
-      : toLocaleDateFR(d.created_at),
-    sharedClassNames: classNamesByDocument.get(d.id) || [],
-    sharedAssignmentTitles: assignmentTitlesByDocument.get(d.id) || [],
-  }))
+  return docs.map((d: any) => {
+    const topicKey = parseCourseTopic(d.course_topic)
+    const materialType = parseCourseMaterialType(d.course_material_type)
+
+    return {
+      id: d.id,
+      name: d.name,
+      filePath: d.file_path,
+      type: toFileType(d.mime_type),
+      size: toFileSize(d.size_bytes),
+      date: toLocaleDateFR(d.created_at),
+      sharedAt: lastSharedAtByDocument.get(d.id)
+        ? new Date(lastSharedAtByDocument.get(d.id)!).toLocaleDateString("fr-FR")
+        : toLocaleDateFR(d.created_at),
+      sharedClassNames: classNamesByDocument.get(d.id) || [],
+      sharedAssignmentTitles: assignmentTitlesByDocument.get(d.id) || [],
+      topicKey,
+      topicLabel: topicKey ? courseTopicLabel(topicKey) : "Ressource hors topic",
+      materialType,
+      materialLabel: materialType ? courseMaterialTypeLabel(materialType) : "Non classé",
+    }
+  })
 }
 
 export async function fetchTeacherActivityData(db: Firestore, userId: string, schoolId: string | null) {
@@ -1220,10 +1329,15 @@ export async function fetchStudentExercisesData(db: Firestore, userId: string, s
   if (schoolId) completionConstraints.push(where("school_id", "==", schoolId))
   const completionEvents = await queryDocs(db, "activity_events", ...completionConstraints)
 
-  const completionByExerciseId = new Map<string, { responseText: string; submittedAt: string | null }>()
+  const completionByExerciseId = new Map<string, {
+    responseText: string
+    submittedAt: string | null
+    responseAnswers: CourseExerciseAnswersPayload
+  }>()
   for (const event of completionEvents) {
     const payload = event.payload && typeof event.payload === "object" ? event.payload : null
-    if (!payload || payload.kind !== "personalized_exercise_completion") continue
+    const payloadKind = typeof payload?.kind === "string" ? payload.kind : ""
+    if (!payload || (payloadKind !== "personalized_exercise_completion" && payloadKind !== "course_exercise_completion")) continue
 
     const exerciseId = typeof payload.exercise_id === "string" ? payload.exercise_id : ""
     if (!exerciseId || completionByExerciseId.has(exerciseId)) continue
@@ -1231,6 +1345,7 @@ export async function fetchStudentExercisesData(db: Firestore, userId: string, s
     completionByExerciseId.set(exerciseId, {
       responseText: typeof payload.response === "string" ? payload.response : "",
       submittedAt: typeof payload.submitted_at === "string" ? payload.submitted_at : toISOString(event.created_at),
+      responseAnswers: parseCourseExerciseAnswers(payload.answers),
     })
   }
 
@@ -1290,6 +1405,10 @@ export async function fetchStudentExercisesData(db: Firestore, userId: string, s
     }),
     personalizedExercises: personalized.map((exercise: any) => {
       const completion = completionByExerciseId.get(exercise.id)
+      const topicKey = parseCourseTopic(exercise.source_topic)
+      const materialType = parseCourseMaterialType(exercise.source_material_type)
+      const questions = parseCourseExerciseQuestions(exercise.questions)
+
       return {
         id: exercise.id,
         schoolId: exercise.school_id || null,
@@ -1304,6 +1423,15 @@ export async function fetchStudentExercisesData(db: Firestore, userId: string, s
         readOnly: false,
         responseText: completion?.responseText || "",
         responseSubmittedAt: completion?.submittedAt || null,
+        responseAnswers: completion?.responseAnswers || {},
+        questions,
+        sourceKind: typeof exercise.source_kind === "string" ? exercise.source_kind : null,
+        sourceDocumentId: typeof exercise.source_document_id === "string" ? exercise.source_document_id : null,
+        sourceDocumentName: typeof exercise.source_document_name === "string" ? exercise.source_document_name : null,
+        topicKey,
+        topicLabel: topicKey ? courseTopicLabel(topicKey) : null,
+        materialType,
+        materialLabel: materialType ? courseMaterialTypeLabel(materialType) : null,
       }
     }),
   }

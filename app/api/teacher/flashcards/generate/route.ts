@@ -106,6 +106,7 @@ export async function POST(request: Request) {
       back: card.back,
       hint: card.hint,
       category: card.category,
+      source_kind: "teacher_correction",
       status: "learning",
       created_at: now,
       reviewed_at: null,
