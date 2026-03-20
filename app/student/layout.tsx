@@ -13,6 +13,7 @@ import { auth } from "@/lib/firebase/client"
 const navItems = [
   { href: "/student", label: "Tableau de bord", icon: Icons.Home },
   { href: "/student/documents", label: "Documents vus en cours", icon: Icons.FileText },
+  { href: "/student/grammar-lessons", label: "Leçons de grammaire", icon: Icons.Book },
   { href: "/student/course-exercises", label: "Exercices basés sur les cours", icon: Icons.Target },
   { href: "/student/flashcards", label: "Flashcards adaptatives", icon: Icons.Layers },
 ]

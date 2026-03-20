@@ -568,6 +568,10 @@ export default function StudentCourseExercisesPage() {
     const questions = resolvedQuestions(exercise)
     const answers = exerciseAnswers[exercise.id] || {}
     const missingAnswerCount = questions.filter((question) => !(answers[question.id] || "").trim()).length
+    const isGrammarExercise = exercise.materialType === "grammar" || exercise.type.toLowerCase() === "grammar"
+    const grammarLessonHref = exercise.sourceDocumentId
+      ? `/student/grammar-lessons?document=${encodeURIComponent(exercise.sourceDocumentId)}`
+      : "/student/grammar-lessons"
 
     return (
       <div
@@ -595,6 +599,17 @@ export default function StudentCourseExercisesPage() {
             <div className="font-sans text-sm text-text-mid mt-2 whitespace-pre-wrap leading-relaxed">
               {resolvedInstructions(exercise)}
             </div>
+
+            {isGrammarExercise && (
+              <div className="mt-2">
+                <Link
+                  href={grammarLessonHref}
+                  className="inline-flex items-center rounded-md border border-watermelon/35 bg-watermelon/10 px-2.5 py-1.5 font-sans text-[12px] font-semibold text-watermelon hover:bg-watermelon/15 transition-colors"
+                >
+                  Voir la leçon de grammaire
+                </Link>
+              </div>
+            )}
 
             {!!exercise.isCompleted && openExerciseId !== exercise.id && renderSavedResponse(exercise)}
           </div>

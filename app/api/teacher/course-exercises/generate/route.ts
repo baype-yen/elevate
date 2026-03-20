@@ -2,7 +2,6 @@ import { NextResponse } from "next/server"
 import { FieldValue } from "firebase-admin/firestore"
 import { adminAuth, adminDb } from "@/lib/firebase/admin"
 import {
-  COURSE_SOURCE_TEXT_MIN_LENGTH,
   courseMaterialTypeLabel,
   courseTopicLabel,
   parseCourseMaterialType,
@@ -32,12 +31,12 @@ async function getCallerUid(request: Request): Promise<string | null> {
 
 function resolveDocumentContent(document: any): { textContent: string } {
   const manualText = typeof document.course_source_text === "string" ? document.course_source_text.trim() : ""
-  if (manualText.length >= COURSE_SOURCE_TEXT_MIN_LENGTH) {
+  if (manualText.length > 0) {
     return { textContent: manualText }
   }
 
   throw new Error(
-    `Mode strict activé: ajoutez le contenu texte du cours (minimum ${COURSE_SOURCE_TEXT_MIN_LENGTH} caractères) avant de lancer "Exercices IA".`,
+    "Mode strict active: ajoutez le contenu texte du cours avant de lancer \"Exercices IA\".",
   )
 }
 
@@ -98,12 +97,25 @@ export async function POST(request: Request) {
     ),
   )
 
-  if (!sharedClassIds.length) {
-    return badRequest("Partagez ce document avec au moins une classe avant de générer les exercices.")
+  const explicitTargetClassIds: string[] = Array.isArray(document.target_class_ids)
+    ? Array.from(
+        new Set(
+          document.target_class_ids
+            .filter((value: unknown): value is string => typeof value === "string")
+            .map((value: string) => value.trim())
+            .filter((value: string) => value.length > 0),
+        ),
+      )
+    : []
+
+  const configuredClassIds = explicitTargetClassIds.length ? explicitTargetClassIds : sharedClassIds
+
+  if (!configuredClassIds.length) {
+    return badRequest("Configurez au moins une classe cible pour ce document avant de générer les exercices.")
   }
 
   const eligibleClasses: Array<{ id: string; level: string }> = []
-  for (const classId of sharedClassIds) {
+  for (const classId of configuredClassIds) {
     const classSnap = await adminDb.collection("classes").doc(classId).get()
     if (!classSnap.exists) continue
     const classData = classSnap.data() as any

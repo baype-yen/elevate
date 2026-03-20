@@ -20,7 +20,6 @@ import {
   serverTimestamp,
 } from "firebase/firestore"
 import {
-  COURSE_SOURCE_TEXT_MIN_LENGTH,
   COURSE_MATERIAL_TYPE_OPTIONS,
   COURSE_TOPIC_OPTIONS,
   courseMaterialTheme,
@@ -42,6 +41,9 @@ type DocumentRow = {
   materialLabel: string
   sourceText: string
   hasSourceText: boolean
+  visibilityMode: DocumentVisibilityMode
+  targetClassIds: string[]
+  targetClassNames: string[]
   sharedClassIds: string[]
   sharedClassNames: string[]
 }
@@ -49,6 +51,17 @@ type DocumentRow = {
 type ClassRow = {
   id: string
   name: string
+}
+
+type DocumentVisibilityMode = "student_visible" | "internal_teacher"
+
+const VISIBILITY_OPTIONS: Array<{ value: DocumentVisibilityMode; label: string }> = [
+  { value: "student_visible", label: "Visible eleves" },
+  { value: "internal_teacher", label: "Interne (non visible eleves)" },
+]
+
+function normalizeVisibilityMode(value: unknown): DocumentVisibilityMode {
+  return value === "internal_teacher" ? "internal_teacher" : "student_visible"
 }
 
 function normalizeFileName(name: string) {
@@ -68,6 +81,7 @@ export default function DocumentsPage() {
   const [documents, setDocuments] = useState<DocumentRow[]>([])
   const [classes, setClasses] = useState<ClassRow[]>([])
   const [shareClassIds, setShareClassIds] = useState<string[]>([])
+  const [uploadVisibilityMode, setUploadVisibilityMode] = useState<DocumentVisibilityMode>("student_visible")
   const [busy, setBusy] = useState(false)
   const [generatingDocumentId, setGeneratingDocumentId] = useState<string | null>(null)
   const [regeneratingDocumentId, setRegeneratingDocumentId] = useState<string | null>(null)
@@ -77,6 +91,8 @@ export default function DocumentsPage() {
   const [titleDraftByDocument, setTitleDraftByDocument] = useState<Record<string, string>>({})
   const [topicDraftByDocument, setTopicDraftByDocument] = useState<Record<string, CourseTopicKey>>({})
   const [materialDraftByDocument, setMaterialDraftByDocument] = useState<Record<string, CourseMaterialTypeKey>>({})
+  const [visibilityDraftByDocument, setVisibilityDraftByDocument] = useState<Record<string, DocumentVisibilityMode>>({})
+  const [targetClassDraftByDocument, setTargetClassDraftByDocument] = useState<Record<string, string[]>>({})
   const [sourceDraftByDocument, setSourceDraftByDocument] = useState<Record<string, string>>({})
 
   const [error, setError] = useState<string | null>(null)
@@ -88,7 +104,49 @@ export default function DocumentsPage() {
   const loadDocuments = async () => {
     if (!context) return
     const data = await fetchTeacherDocumentsData(db, context.userId, context.activeSchoolId)
-    setDocuments(data.documents)
+
+    const normalizedDocuments: DocumentRow[] = (data.documents || []).map((documentRow: any) => ({
+      id: String(documentRow.id || ""),
+      name: String(documentRow.name || "Document"),
+      filePath: typeof documentRow.filePath === "string" ? documentRow.filePath : "",
+      isTextOnly: !!documentRow.isTextOnly,
+      type: String(documentRow.type || "FILE"),
+      size: String(documentRow.size || "-"),
+      date: String(documentRow.date || "-"),
+      topicKey: documentRow.topicKey || null,
+      topicLabel: String(documentRow.topicLabel || "Ressource hors topic"),
+      materialType: documentRow.materialType || null,
+      materialLabel: String(documentRow.materialLabel || "Non classe"),
+      sourceText: typeof documentRow.sourceText === "string" ? documentRow.sourceText : "",
+      hasSourceText: !!documentRow.hasSourceText,
+      visibilityMode: normalizeVisibilityMode(documentRow.visibilityMode),
+      targetClassIds: Array.isArray(documentRow.targetClassIds)
+        ? documentRow.targetClassIds
+            .filter((value: unknown): value is string => typeof value === "string")
+            .map((value: string) => value.trim())
+            .filter((value: string) => value.length > 0)
+        : [],
+      targetClassNames: Array.isArray(documentRow.targetClassNames)
+        ? documentRow.targetClassNames
+            .filter((value: unknown): value is string => typeof value === "string")
+            .map((value: string) => value.trim())
+            .filter((value: string) => value.length > 0)
+        : [],
+      sharedClassIds: Array.isArray(documentRow.sharedClassIds)
+        ? documentRow.sharedClassIds
+            .filter((value: unknown): value is string => typeof value === "string")
+            .map((value: string) => value.trim())
+            .filter((value: string) => value.length > 0)
+        : [],
+      sharedClassNames: Array.isArray(documentRow.sharedClassNames)
+        ? documentRow.sharedClassNames
+            .filter((value: unknown): value is string => typeof value === "string")
+            .map((value: string) => value.trim())
+            .filter((value: string) => value.length > 0)
+        : [],
+    }))
+
+    setDocuments(normalizedDocuments)
     setClasses(data.classes)
     setShareClassIds((previous) => {
       const valid = previous.filter((id) => data.classes.some((c) => c.id === id))
@@ -115,7 +173,7 @@ export default function DocumentsPage() {
     if (!file || !context) return
 
     if (context.activeSchoolId && classes.length && !shareClassIds.length) {
-      setError("Selectionnez au moins une classe pour partager le document.")
+      setError("Selectionnez au moins une classe cible pour la generation IA.")
       return
     }
 
@@ -144,19 +202,23 @@ export default function DocumentsPage() {
         course_topic: courseTopic,
         course_material_type: courseMaterialType,
         course_source_text: null,
+        visibility_mode: uploadVisibilityMode,
+        target_class_ids: shareClassIds,
         created_at: serverTimestamp(),
         updated_at: serverTimestamp(),
       })
 
       if (context.activeSchoolId && shareClassIds.length) {
-        for (const classId of shareClassIds) {
-          await addDoc(collection(db, "document_shares"), {
-            document_id: createdDocRef.id,
-            school_id: context.activeSchoolId,
-            class_id: classId,
-            shared_by: context.userId,
-            created_at: serverTimestamp(),
-          })
+        if (uploadVisibilityMode === "student_visible") {
+          for (const classId of shareClassIds) {
+            await addDoc(collection(db, "document_shares"), {
+              document_id: createdDocRef.id,
+              school_id: context.activeSchoolId,
+              class_id: classId,
+              shared_by: context.userId,
+              created_at: serverTimestamp(),
+            })
+          }
         }
 
         await addDoc(collection(db, "activity_events"), {
@@ -165,7 +227,9 @@ export default function DocumentsPage() {
           actor_id: context.userId,
           event_type: "document_uploaded",
           payload: {
-            text: `${file.name} a ete partage avec ${shareClassIds.length} classe(s).`,
+            text: uploadVisibilityMode === "internal_teacher"
+              ? `${file.name} a ete ajoute comme document interne pour ${shareClassIds.length} classe(s) cible(s).`
+              : `${file.name} a ete partage avec ${shareClassIds.length} classe(s).`,
           },
           created_at: serverTimestamp(),
         })
@@ -204,6 +268,16 @@ export default function DocumentsPage() {
       return { ...previous, [documentRow.id]: documentRow.materialType || "text" }
     })
 
+    setVisibilityDraftByDocument((previous) => {
+      if (Object.prototype.hasOwnProperty.call(previous, documentRow.id)) return previous
+      return { ...previous, [documentRow.id]: documentRow.visibilityMode || "student_visible" }
+    })
+
+    setTargetClassDraftByDocument((previous) => {
+      if (Object.prototype.hasOwnProperty.call(previous, documentRow.id)) return previous
+      return { ...previous, [documentRow.id]: documentRow.targetClassIds || [] }
+    })
+
     setSourceDraftByDocument((previous) => {
       if (Object.prototype.hasOwnProperty.call(previous, documentRow.id)) return previous
       return { ...previous, [documentRow.id]: documentRow.sourceText || "" }
@@ -217,6 +291,10 @@ export default function DocumentsPage() {
     const normalizedTitle = titleDraft.trim()
     const nextTopic = topicDraftByDocument[documentRow.id] || documentRow.topicKey || "malls"
     const nextMaterialType = materialDraftByDocument[documentRow.id] || documentRow.materialType || "text"
+    const nextVisibilityMode = visibilityDraftByDocument[documentRow.id] || documentRow.visibilityMode || "student_visible"
+    const nextTargetClassIds = (targetClassDraftByDocument[documentRow.id] || documentRow.targetClassIds || [])
+      .map((classId) => classId.trim())
+      .filter((classId, index, source) => !!classId && source.indexOf(classId) === index)
     const sourceDraft = sourceDraftByDocument[documentRow.id] ?? documentRow.sourceText
     const normalizedSourceText = sourceDraft.trim()
 
@@ -225,8 +303,13 @@ export default function DocumentsPage() {
       return
     }
 
-    if (normalizedSourceText.length < COURSE_SOURCE_TEXT_MIN_LENGTH) {
-      setError(`Le contenu texte pour IA doit contenir au moins ${COURSE_SOURCE_TEXT_MIN_LENGTH} caracteres.`)
+    if (context.activeSchoolId && classes.length && !nextTargetClassIds.length) {
+      setError("Selectionnez au moins une classe cible pour la generation IA.")
+      return
+    }
+
+    if (!normalizedSourceText.length) {
+      setError("Le contenu texte pour IA est obligatoire.")
       return
     }
 
@@ -245,10 +328,51 @@ export default function DocumentsPage() {
         course_topic: nextTopic,
         course_material_type: nextMaterialType,
         course_source_text: normalizedSourceText,
+        visibility_mode: nextVisibilityMode,
+        target_class_ids: nextTargetClassIds,
         updated_at: serverTimestamp(),
       })
 
-      setSuccess(`Document « ${normalizedTitle} » mis a jour.`)
+      const existingSharesSnap = await getDocs(
+        query(collection(db, "document_shares"), where("document_id", "==", documentRow.id)),
+      )
+
+      if (nextVisibilityMode === "internal_teacher") {
+        for (const shareRow of existingSharesSnap.docs) {
+          await deleteDoc(doc(db, "document_shares", shareRow.id))
+        }
+      } else {
+        const existingByClass = new Map<string, string>()
+        for (const shareRow of existingSharesSnap.docs) {
+          const share = shareRow.data() as any
+          const classId = typeof share.class_id === "string" ? share.class_id : ""
+          if (!classId) continue
+          existingByClass.set(classId, shareRow.id)
+        }
+
+        for (const [classId, shareId] of existingByClass.entries()) {
+          if (!nextTargetClassIds.includes(classId)) {
+            await deleteDoc(doc(db, "document_shares", shareId))
+          }
+        }
+
+        for (const classId of nextTargetClassIds) {
+          if (existingByClass.has(classId)) continue
+          await addDoc(collection(db, "document_shares"), {
+            document_id: documentRow.id,
+            school_id: context.activeSchoolId,
+            class_id: classId,
+            shared_by: context.userId,
+            created_at: serverTimestamp(),
+          })
+        }
+      }
+
+      setSuccess(
+        nextVisibilityMode === "internal_teacher"
+          ? `Document « ${normalizedTitle} » mis a jour en mode interne (non visible eleves).`
+          : `Document « ${normalizedTitle} » mis a jour et partage avec ${nextTargetClassIds.length} classe(s).`,
+      )
       setEditingDocumentId(null)
       await loadDocuments()
     } catch (e: any) {
@@ -423,7 +547,7 @@ export default function DocumentsPage() {
 
       {context?.activeSchoolId && (
         <div className="mb-5 p-4 rounded-xl border border-gray-light bg-off-white flex flex-col gap-4">
-          <div className="font-sans text-[13px] font-semibold text-navy mb-2">Partager avec les classes</div>
+          <div className="font-sans text-[13px] font-semibold text-navy mb-2">Classes cibles pour generation IA</div>
           {classes.length ? (
             <BadgeChooser
               multi
@@ -432,8 +556,22 @@ export default function DocumentsPage() {
               options={classes.map((classItem) => ({ value: classItem.id, label: classItem.name }))}
             />
           ) : (
-            <div className="font-sans text-sm text-text-mid">Creez une classe pour partager les documents avec vos eleves.</div>
+            <div className="font-sans text-sm text-text-mid">Creez une classe pour cibler la generation des exercices.</div>
           )}
+
+          <div>
+            <div className="font-sans text-[13px] font-semibold text-navy mb-2">Visibilite du document</div>
+            <BadgeChooser
+              selected={uploadVisibilityMode}
+              onSelect={(value) => setUploadVisibilityMode(normalizeVisibilityMode(value))}
+              options={VISIBILITY_OPTIONS}
+            />
+            <div className="mt-1.5 font-sans text-[11px] text-text-light">
+              {uploadVisibilityMode === "internal_teacher"
+                ? "Mode interne: le document reste cache aux eleves, mais sert de base a la generation IA."
+                : "Mode visible eleves: le document apparait dans l'espace etudiant des classes ciblees."}
+            </div>
+          </div>
 
           <div>
             <div className="font-sans text-[13px] font-semibold text-navy mb-2">Topic par defaut pour le prochain upload</div>
@@ -511,11 +649,14 @@ export default function DocumentsPage() {
                 <div className="font-sans text-[11px] text-text-light mt-1 truncate">
                   {documentRow.hasSourceText
                     ? "Source texte IA presente"
-                    : `Texte IA manquant (minimum ${COURSE_SOURCE_TEXT_MIN_LENGTH} caracteres) -> cliquez sur Modifier`}
+                    : "Texte IA manquant -> cliquez sur Modifier"}
                 </div>
-                {!!documentRow.sharedClassNames.length && (
+                <div className="font-sans text-[11px] text-text-light mt-1 truncate">
+                  Mode: {documentRow.visibilityMode === "internal_teacher" ? "Interne (non visible eleves)" : "Visible eleves"}
+                </div>
+                {!!documentRow.targetClassNames.length && (
                   <div className="font-sans text-[11px] text-text-light mt-1 truncate">
-                    Partage avec : {documentRow.sharedClassNames.join(", ")}
+                    Classes cibles IA : {documentRow.targetClassNames.join(", ")}
                   </div>
                 )}
               </div>
@@ -542,7 +683,7 @@ export default function DocumentsPage() {
                   busy
                   || generatingDocumentId === documentRow.id
                   || regeneratingDocumentId === documentRow.id
-                  || !documentRow.sharedClassIds.length
+                  || !documentRow.targetClassIds.length
                   || !documentRow.topicKey
                   || !documentRow.materialType
                   || !documentRow.hasSourceText
@@ -559,7 +700,7 @@ export default function DocumentsPage() {
                   busy
                   || regeneratingDocumentId === documentRow.id
                   || generatingDocumentId === documentRow.id
-                  || !documentRow.sharedClassIds.length
+                  || !documentRow.targetClassIds.length
                   || !documentRow.topicKey
                   || !documentRow.materialType
                   || !documentRow.hasSourceText
@@ -603,7 +744,7 @@ export default function DocumentsPage() {
 
             {editingDocumentId === documentRow.id && (
               <div className="border-t border-gray-light px-4 pb-4 pt-3">
-                <div className="font-sans text-[12px] font-semibold text-navy mb-1.5">Modifier ce document (titre, categorie, texte IA)</div>
+                <div className="font-sans text-[12px] font-semibold text-navy mb-1.5">Modifier ce document (titre, categorie, visibilite, texte IA)</div>
 
                 <div className="flex flex-col gap-3">
                   <input
@@ -644,6 +785,36 @@ export default function DocumentsPage() {
                   </div>
 
                   <div>
+                    <div className="font-sans text-[12px] font-semibold text-navy mb-1.5">Visibilite du document</div>
+                    <BadgeChooser
+                      selected={visibilityDraftByDocument[documentRow.id] || documentRow.visibilityMode || "student_visible"}
+                      onSelect={(value) => setVisibilityDraftByDocument((previous) => ({
+                        ...previous,
+                        [documentRow.id]: normalizeVisibilityMode(value),
+                      }))}
+                      options={VISIBILITY_OPTIONS}
+                    />
+                  </div>
+
+                  <div>
+                    <div className="font-sans text-[12px] font-semibold text-navy mb-1.5">Classes cibles pour generation IA</div>
+                    <BadgeChooser
+                      multi
+                      selected={targetClassDraftByDocument[documentRow.id] || documentRow.targetClassIds || []}
+                      onSelect={(value) => setTargetClassDraftByDocument((previous) => ({
+                        ...previous,
+                        [documentRow.id]: Array.isArray(value) ? value : value ? [value] : [],
+                      }))}
+                      options={classes.map((classItem) => ({ value: classItem.id, label: classItem.name }))}
+                    />
+                    <div className="mt-1.5 font-sans text-[11px] text-text-light">
+                      {(visibilityDraftByDocument[documentRow.id] || documentRow.visibilityMode || "student_visible") === "internal_teacher"
+                        ? "Interne: ce document est utilise pour l'IA et reste cache aux eleves."
+                        : "Visible eleves: ce document sera aussi visible dans l'espace etudiant."}
+                    </div>
+                  </div>
+
+                  <div>
                     <div className="font-sans text-[12px] font-semibold text-navy mb-1.5">Texte IA (obligatoire)</div>
                     <textarea
                       value={sourceDraftByDocument[documentRow.id] ?? documentRow.sourceText}
@@ -651,7 +822,7 @@ export default function DocumentsPage() {
                         ...previous,
                         [documentRow.id]: event.target.value,
                       }))}
-                      placeholder={`Collez la lecon ici (minimum ${COURSE_SOURCE_TEXT_MIN_LENGTH} caracteres).`}
+                      placeholder="Collez la lecon ici."
                       className="w-full min-h-[140px] rounded-[10px] border-2 border-gray-mid bg-card px-3.5 py-3 font-sans text-sm text-text-dark placeholder:text-text-light outline-none focus:border-navy focus:shadow-[0_0_0_3px_rgba(27,42,74,0.09)]"
                     />
                   </div>

@@ -16,7 +16,6 @@ import {
   type Firestore,
 } from "firebase/firestore"
 import {
-  COURSE_SOURCE_TEXT_MIN_LENGTH,
   courseMaterialTypeLabel,
   courseTopicLabel,
   parseCourseMaterialType,
@@ -29,6 +28,12 @@ function upLevel(level: string | null | undefined) {
 
 function normalizeLevel(level: string) {
   return level.toLowerCase()
+}
+
+function parseDocumentVisibilityMode(value: unknown): "student_visible" | "internal_teacher" {
+  if (typeof value !== "string") return "student_visible"
+  const normalized = value.trim().toLowerCase()
+  return normalized === "internal_teacher" ? "internal_teacher" : "student_visible"
 }
 
 function normalizePersonKey(name: string) {
@@ -894,6 +899,24 @@ export async function fetchTeacherDocumentsData(db: Firestore, userId: string, s
       const shared = sharedByDocument.get(d.id) || []
       const topicKey = parseCourseTopic(d.course_topic)
       const materialType = parseCourseMaterialType(d.course_material_type)
+      const visibilityMode = parseDocumentVisibilityMode(d.visibility_mode)
+
+      const shareClassIds = shared.map((s) => s.id)
+      const explicitTargetClassIds = Array.isArray(d.target_class_ids)
+        ? Array.from(
+            new Set(
+              d.target_class_ids
+                .filter((value: unknown) => typeof value === "string")
+                .map((value: string) => value.trim())
+                .filter(Boolean),
+            ),
+          )
+        : []
+
+      const targetClassIds = explicitTargetClassIds.length ? explicitTargetClassIds : shareClassIds
+      const targetClassNames = targetClassIds
+        .map((classId) => classNameById.get(classId))
+        .filter((value): value is string => !!value)
 
       return {
         id: d.id,
@@ -910,8 +933,11 @@ export async function fetchTeacherDocumentsData(db: Firestore, userId: string, s
         sourceText: typeof d.course_source_text === "string" ? d.course_source_text : "",
         hasSourceText:
           typeof d.course_source_text === "string"
-          && d.course_source_text.trim().length >= COURSE_SOURCE_TEXT_MIN_LENGTH,
-        sharedClassIds: shared.map((s) => s.id),
+          && d.course_source_text.trim().length > 0,
+        visibilityMode,
+        targetClassIds,
+        targetClassNames,
+        sharedClassIds: shareClassIds,
         sharedClassNames: shared.map((s) => s.name),
       }
     }),
@@ -970,6 +996,9 @@ export async function fetchStudentDocumentsData(db: Firestore, userId: string, s
     const d = await queryDocs(db, "documents", where("__name__", "in", batch))
     docs.push(...d)
   }
+
+  docs = docs.filter((d: any) => parseDocumentVisibilityMode(d.visibility_mode) !== "internal_teacher")
+
   docs.sort((a: any, b: any) => {
     const da = toDate(a.created_at)?.getTime() || 0
     const db2 = toDate(b.created_at)?.getTime() || 0
@@ -1030,6 +1059,155 @@ export async function fetchStudentDocumentsData(db: Firestore, userId: string, s
       materialLabel: materialType ? courseMaterialTypeLabel(materialType) : "Non classé",
     }
   })
+}
+
+export async function fetchStudentGrammarLessonsData(db: Firestore, userId: string, schoolId: string | null) {
+  const enrollments = await queryDocs(
+    db,
+    "class_enrollments",
+    where("student_id", "==", userId),
+    where("status", "==", "active"),
+  )
+
+  const enrolledClassIds = enrollments
+    .map((enrollment: any) => (typeof enrollment.class_id === "string" ? enrollment.class_id : ""))
+    .filter(Boolean)
+
+  if (!enrolledClassIds.length) return [] as any[]
+
+  let classes: any[] = []
+  for (const batch of batchIds(enrolledClassIds)) {
+    const constraints: any[] = [where("__name__", "in", batch), where("archived_at", "==", null)]
+    if (schoolId) constraints.push(where("school_id", "==", schoolId))
+    const rows = await queryDocs(db, "classes", ...constraints)
+    classes.push(...rows)
+  }
+
+  const classIds = classes.map((classRow: any) => classRow.id)
+  if (!classIds.length) return [] as any[]
+
+  const classIdSet = new Set(classIds)
+  const classNameById = new Map(classes.map((classRow: any) => [classRow.id, classRow.name]))
+
+  let classShares: any[] = []
+  for (const batch of batchIds(classIds)) {
+    const constraints: any[] = [where("class_id", "in", batch)]
+    if (schoolId) constraints.push(where("school_id", "==", schoolId))
+    const rows = await queryDocs(db, "document_shares", ...constraints)
+    classShares.push(...rows)
+  }
+
+  const sharedClassNamesByDocument = new Map<string, string[]>()
+  const sharedClassIdsByDocument = new Map<string, string[]>()
+
+  for (const share of classShares) {
+    const documentId = typeof share.document_id === "string" ? share.document_id : ""
+    const classId = typeof share.class_id === "string" ? share.class_id : ""
+    if (!documentId || !classId) continue
+
+    const className = classNameById.get(classId)
+    if (!className) continue
+
+    const classNames = sharedClassNamesByDocument.get(documentId) || []
+    if (!classNames.includes(className)) {
+      classNames.push(className)
+      sharedClassNamesByDocument.set(documentId, classNames)
+    }
+
+    const classIdsForDoc = sharedClassIdsByDocument.get(documentId) || []
+    if (!classIdsForDoc.includes(classId)) {
+      classIdsForDoc.push(classId)
+      sharedClassIdsByDocument.set(documentId, classIdsForDoc)
+    }
+  }
+
+  const sharedDocumentIds = Array.from(new Set(classShares.map((share: any) => share.document_id).filter(Boolean)))
+
+  let sharedDocs: any[] = []
+  for (const batch of batchIds(sharedDocumentIds)) {
+    if (!batch.length) continue
+    const rows = await queryDocs(db, "documents", where("__name__", "in", batch))
+    sharedDocs.push(...rows)
+  }
+
+  const internalConstraints: any[] = [
+    where("course_material_type", "==", "grammar"),
+    where("visibility_mode", "==", "internal_teacher"),
+  ]
+  if (schoolId) internalConstraints.push(where("school_id", "==", schoolId))
+  else internalConstraints.push(where("school_id", "==", null))
+
+  let internalDocs: any[] = []
+  try {
+    const rows = await queryDocs(db, "documents", ...internalConstraints)
+    internalDocs = rows.filter((row: any) => {
+      const targetClassIds = Array.isArray(row.target_class_ids)
+        ? row.target_class_ids
+            .filter((value: unknown): value is string => typeof value === "string")
+            .map((value: string) => value.trim())
+            .filter(Boolean)
+        : []
+      return targetClassIds.some((classId: string) => classIdSet.has(classId))
+    })
+  } catch {
+    internalDocs = []
+  }
+
+  const byId = new Map<string, any>()
+  for (const row of sharedDocs) {
+    byId.set(row.id, row)
+  }
+  for (const row of internalDocs) {
+    byId.set(row.id, row)
+  }
+
+  const rows = Array.from(byId.values())
+    .filter((row: any) => parseCourseMaterialType(row.course_material_type) === "grammar")
+    .map((row: any) => {
+      const visibilityMode = parseDocumentVisibilityMode(row.visibility_mode)
+      const explicitTargetClassIds: string[] = Array.isArray(row.target_class_ids)
+        ? Array.from(
+            new Set(
+              row.target_class_ids
+                .filter((value: unknown): value is string => typeof value === "string")
+                .map((value: string) => value.trim())
+                .filter(Boolean),
+            ),
+          )
+        : []
+
+      const fallbackSharedIds = sharedClassIdsByDocument.get(row.id) || []
+      const targetClassIds = explicitTargetClassIds.length ? explicitTargetClassIds : fallbackSharedIds
+      const targetClassNames = targetClassIds
+        .map((classId: string) => classNameById.get(classId))
+        .filter((value): value is string => !!value)
+
+      const topicKey = parseCourseTopic(row.course_topic)
+
+      return {
+        id: row.id,
+        name: row.name,
+        filePath: typeof row.file_path === "string" ? row.file_path : "",
+        type: toFileType(row.mime_type),
+        size: toFileSize(row.size_bytes),
+        date: toLocaleDateFR(row.created_at),
+        sourceText: typeof row.course_source_text === "string" ? row.course_source_text : "",
+        visibilityMode,
+        topicKey,
+        topicLabel: topicKey ? courseTopicLabel(topicKey) : "Ressource hors topic",
+        targetClassNames,
+        sharedClassNames: sharedClassNamesByDocument.get(row.id) || [],
+        createdAtIso: toISOString(row.created_at),
+      }
+    })
+
+  rows.sort((left: any, right: any) => {
+    const leftDate = Date.parse(left.createdAtIso || "") || 0
+    const rightDate = Date.parse(right.createdAtIso || "") || 0
+    return rightDate - leftDate
+  })
+
+  return rows.map(({ createdAtIso, ...rest }: any) => rest)
 }
 
 export async function fetchTeacherActivityData(db: Firestore, userId: string, schoolId: string | null) {
