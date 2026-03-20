@@ -60,6 +60,11 @@ export default function DocumentsPage() {
   const [shareClassIds, setShareClassIds] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
   const [generatingDocumentId, setGeneratingDocumentId] = useState<string | null>(null)
+  const [editingMetaDocumentId, setEditingMetaDocumentId] = useState<string | null>(null)
+  const [savingMetaDocumentId, setSavingMetaDocumentId] = useState<string | null>(null)
+  const [titleDraftByDocument, setTitleDraftByDocument] = useState<Record<string, string>>({})
+  const [topicDraftByDocument, setTopicDraftByDocument] = useState<Record<string, CourseTopicKey>>({})
+  const [materialDraftByDocument, setMaterialDraftByDocument] = useState<Record<string, CourseMaterialTypeKey>>({})
   const [editingSourceDocumentId, setEditingSourceDocumentId] = useState<string | null>(null)
   const [savingSourceDocumentId, setSavingSourceDocumentId] = useState<string | null>(null)
   const [sourceDraftByDocument, setSourceDraftByDocument] = useState<Record<string, string>>({})
@@ -300,6 +305,7 @@ export default function DocumentsPage() {
   const onToggleSourceEditor = (documentRow: DocumentRow) => {
     setError(null)
     setSuccess(null)
+    setEditingMetaDocumentId(null)
 
     setEditingSourceDocumentId((previous) => {
       if (previous === documentRow.id) return null
@@ -316,6 +322,85 @@ export default function DocumentsPage() {
         [documentRow.id]: documentRow.sourceText || "",
       }
     })
+  }
+
+  const onToggleMetadataEditor = (documentRow: DocumentRow) => {
+    setError(null)
+    setSuccess(null)
+    setEditingSourceDocumentId(null)
+
+    setEditingMetaDocumentId((previous) => {
+      if (previous === documentRow.id) return null
+      return documentRow.id
+    })
+
+    setTitleDraftByDocument((previous) => {
+      if (Object.prototype.hasOwnProperty.call(previous, documentRow.id)) {
+        return previous
+      }
+
+      return {
+        ...previous,
+        [documentRow.id]: documentRow.name,
+      }
+    })
+
+    setTopicDraftByDocument((previous) => {
+      if (Object.prototype.hasOwnProperty.call(previous, documentRow.id)) {
+        return previous
+      }
+
+      return {
+        ...previous,
+        [documentRow.id]: documentRow.topicKey || "malls",
+      }
+    })
+
+    setMaterialDraftByDocument((previous) => {
+      if (Object.prototype.hasOwnProperty.call(previous, documentRow.id)) {
+        return previous
+      }
+
+      return {
+        ...previous,
+        [documentRow.id]: documentRow.materialType || "text",
+      }
+    })
+  }
+
+  const onSaveDocumentMetadata = async (documentRow: DocumentRow) => {
+    if (!context) return
+
+    const titleDraft = titleDraftByDocument[documentRow.id] ?? documentRow.name
+    const normalizedTitle = titleDraft.trim()
+    const nextTopic = topicDraftByDocument[documentRow.id] || documentRow.topicKey || "malls"
+    const nextMaterialType = materialDraftByDocument[documentRow.id] || documentRow.materialType || "text"
+
+    if (normalizedTitle.length < 3) {
+      setError("Le titre du document doit contenir au moins 3 caracteres.")
+      return
+    }
+
+    try {
+      setSavingMetaDocumentId(documentRow.id)
+      setError(null)
+      setSuccess(null)
+
+      await updateDoc(doc(db, "documents", documentRow.id), {
+        name: normalizedTitle,
+        course_topic: nextTopic,
+        course_material_type: nextMaterialType,
+        updated_at: serverTimestamp(),
+      })
+
+      setSuccess(`Document « ${normalizedTitle} » mis a jour.`)
+      setEditingMetaDocumentId(null)
+      await loadDocuments()
+    } catch (e: any) {
+      setError(e.message || "Impossible de modifier ce document.")
+    } finally {
+      setSavingMetaDocumentId(null)
+    }
   }
 
   const onSaveSourceText = async (documentRow: DocumentRow) => {
@@ -382,6 +467,10 @@ export default function DocumentsPage() {
 
       if (editingSourceDocumentId === documentRow.id) {
         setEditingSourceDocumentId(null)
+      }
+
+      if (editingMetaDocumentId === documentRow.id) {
+        setEditingMetaDocumentId(null)
       }
 
       setSuccess(`Document « ${documentRow.name} » supprimé.`)
@@ -565,8 +654,27 @@ export default function DocumentsPage() {
               <ElevateButton
                 size="sm"
                 variant="outline"
+                onClick={() => onToggleMetadataEditor(documentRow)}
+                disabled={
+                  busy
+                  || savingMetaDocumentId === documentRow.id
+                  || savingSourceDocumentId === documentRow.id
+                  || generatingDocumentId === documentRow.id
+                }
+              >
+                {editingMetaDocumentId === documentRow.id ? "Fermer" : "Modifier"}
+              </ElevateButton>
+
+              <ElevateButton
+                size="sm"
+                variant="outline"
                 onClick={() => onToggleSourceEditor(documentRow)}
-                disabled={busy || savingSourceDocumentId === documentRow.id || generatingDocumentId === documentRow.id}
+                disabled={
+                  busy
+                  || savingSourceDocumentId === documentRow.id
+                  || savingMetaDocumentId === documentRow.id
+                  || generatingDocumentId === documentRow.id
+                }
               >
                 {editingSourceDocumentId === documentRow.id ? "Fermer" : "Texte IA"}
               </ElevateButton>
@@ -612,6 +720,70 @@ export default function DocumentsPage() {
                 Supprimer
               </button>
             </div>
+
+            {editingMetaDocumentId === documentRow.id && (
+              <div className="border-t border-gray-light px-4 pb-4 pt-3">
+                <div className="font-sans text-[12px] font-semibold text-navy mb-1.5">Modifier le titre et la categorie</div>
+
+                <div className="flex flex-col gap-3">
+                  <input
+                    value={titleDraftByDocument[documentRow.id] ?? documentRow.name}
+                    onChange={(event) => setTitleDraftByDocument((previous) => ({
+                      ...previous,
+                      [documentRow.id]: event.target.value,
+                    }))}
+                    placeholder="Titre du document"
+                    className="h-10 rounded-[10px] border-2 border-gray-mid bg-card px-3 font-sans text-sm text-text-dark placeholder:text-text-light outline-none focus:border-navy"
+                  />
+
+                  <div>
+                    <div className="font-sans text-[12px] font-semibold text-navy mb-1.5">Topic du cours</div>
+                    <BadgeChooser
+                      selected={topicDraftByDocument[documentRow.id] || documentRow.topicKey || "malls"}
+                      onSelect={(value) => setTopicDraftByDocument((previous) => ({
+                        ...previous,
+                        [documentRow.id]: String(value) as CourseTopicKey,
+                      }))}
+                      options={COURSE_TOPIC_OPTIONS.map((topic) => ({ value: topic.value, label: topic.label }))}
+                    />
+                  </div>
+
+                  <div>
+                    <div className="font-sans text-[12px] font-semibold text-navy mb-1.5">Type de contenu</div>
+                    <BadgeChooser
+                      selected={materialDraftByDocument[documentRow.id] || documentRow.materialType || "text"}
+                      onSelect={(value) => setMaterialDraftByDocument((previous) => ({
+                        ...previous,
+                        [documentRow.id]: String(value) as CourseMaterialTypeKey,
+                      }))}
+                      options={COURSE_MATERIAL_TYPE_OPTIONS.map((materialType) => ({
+                        value: materialType.value,
+                        label: materialType.label,
+                      }))}
+                    />
+                  </div>
+                </div>
+
+                <div className="mt-2 flex items-center gap-2.5">
+                  <ElevateButton
+                    size="sm"
+                    variant="primary"
+                    onClick={() => onSaveDocumentMetadata(documentRow)}
+                    disabled={savingMetaDocumentId === documentRow.id}
+                  >
+                    {savingMetaDocumentId === documentRow.id ? "Enregistrement..." : "Enregistrer les modifications"}
+                  </ElevateButton>
+                  <ElevateButton
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setEditingMetaDocumentId(null)}
+                    disabled={savingMetaDocumentId === documentRow.id}
+                  >
+                    Annuler
+                  </ElevateButton>
+                </div>
+              </div>
+            )}
 
             {editingSourceDocumentId === documentRow.id && (
               <div className="border-t border-gray-light px-4 pb-4 pt-3">
