@@ -67,8 +67,8 @@ function categoryLabel(category: AdaptiveCategory) {
 
 function categoryAccent(category: AdaptiveCategory) {
   if (category === "vocabulary") return "bg-abricot/15 text-abricot-dark border-abricot/30"
-  if (category === "grammar") return "bg-watermelon/10 text-watermelon border-watermelon/30"
-  return "bg-violet/10 text-violet border-violet/30"
+  if (category === "grammar") return "bg-violet/10 text-violet border-violet/30"
+  return "bg-navy-light/10 text-navy border-navy-light/35"
 }
 
 function normalizeAdaptiveCard(row: any): AdaptiveCard | null {

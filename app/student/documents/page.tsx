@@ -154,7 +154,7 @@ export default function StudentDocumentsPage() {
           <section key={topic.value} className="rounded-xl border border-gray-light bg-off-white p-4">
             <h4 className="font-serif text-lg font-bold text-navy mb-3">{topic.label}</h4>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
               {COURSE_MATERIAL_TYPE_OPTIONS.map((materialType) => {
                 const rows = topicDocuments.filter((doc) => doc.materialType === materialType.value)
                 const materialTheme = courseMaterialTheme(materialType.value)

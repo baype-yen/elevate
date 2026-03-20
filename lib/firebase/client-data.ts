@@ -1130,16 +1130,25 @@ export async function fetchStudentGrammarLessonsData(db: Firestore, userId: stri
     sharedDocs.push(...rows)
   }
 
-  const internalConstraints: any[] = [
-    where("course_material_type", "==", "grammar"),
-    where("visibility_mode", "==", "internal_teacher"),
-  ]
-  if (schoolId) internalConstraints.push(where("school_id", "==", schoolId))
-  else internalConstraints.push(where("school_id", "==", null))
-
   let internalDocs: any[] = []
   try {
-    const rows = await queryDocs(db, "documents", ...internalConstraints)
+    const buildConstraints = (materialType: "grammar" | "conjugation") => {
+      const constraints: any[] = [
+        where("course_material_type", "==", materialType),
+        where("visibility_mode", "==", "internal_teacher"),
+      ]
+      if (schoolId) constraints.push(where("school_id", "==", schoolId))
+      else constraints.push(where("school_id", "==", null))
+      return constraints
+    }
+
+    const [grammarRows, conjugationRows] = await Promise.all([
+      queryDocs(db, "documents", ...buildConstraints("grammar")),
+      queryDocs(db, "documents", ...buildConstraints("conjugation")),
+    ])
+
+    const rows = [...grammarRows, ...conjugationRows]
+
     internalDocs = rows.filter((row: any) => {
       const targetClassIds = Array.isArray(row.target_class_ids)
         ? row.target_class_ids
@@ -1162,7 +1171,10 @@ export async function fetchStudentGrammarLessonsData(db: Firestore, userId: stri
   }
 
   const rows = Array.from(byId.values())
-    .filter((row: any) => parseCourseMaterialType(row.course_material_type) === "grammar")
+    .filter((row: any) => {
+      const materialType = parseCourseMaterialType(row.course_material_type)
+      return materialType === "grammar" || materialType === "conjugation"
+    })
     .map((row: any) => {
       const visibilityMode = parseDocumentVisibilityMode(row.visibility_mode)
       const explicitTargetClassIds: string[] = Array.isArray(row.target_class_ids)

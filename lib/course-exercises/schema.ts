@@ -1,6 +1,6 @@
 import { z } from "zod"
 
-const COURSE_EXERCISE_TYPES = ["reading", "vocabulary", "grammar", "mixed"] as const
+const COURSE_EXERCISE_TYPES = ["reading", "vocabulary", "conjugation", "grammar", "mixed"] as const
 const COURSE_EXERCISE_QUESTION_TYPES = ["single_choice", "short_answer"] as const
 
 export const CourseExerciseQuestionSchema = z.object({

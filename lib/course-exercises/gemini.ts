@@ -27,7 +27,7 @@ Format de sortie JSON uniquement:
     {
       "title": "...",
       "instructions": "...",
-      "exercise_type": "reading|vocabulary|grammar|mixed",
+      "exercise_type": "reading|vocabulary|conjugation|grammar|mixed",
       "questions": [
         {
           "id": "q1",
@@ -116,6 +116,14 @@ function fallbackQuestionsForType(exerciseType: CourseExerciseContent["exercise_
     ]
   }
 
+  if (exerciseType === "conjugation") {
+    return [
+      "Identifiez 4 verbes du document et precisez leur temps.",
+      "Reecrivez 4 phrases en changeant le temps verbal (present, preterit, present perfect selon le contexte).",
+      "Expliquez brievement en francais la raison de chaque choix de temps.",
+    ]
+  }
+
   return [
     "Resumez le document en 4 a 5 phrases claires.",
     "Relevez 4 mots importants et reutilisez-les dans de nouvelles phrases en anglais.",
@@ -132,6 +140,9 @@ function defaultInstructionsForType(exerciseType: CourseExerciseContent["exercis
   }
   if (exerciseType === "grammar") {
     return "Appliquez les regles de grammaire vues en cours en repondant aux questions ci-dessous."
+  }
+  if (exerciseType === "conjugation") {
+    return "Travaillez la conjugaison vue en cours en repondant aux questions ci-dessous."
   }
   return "Repondez aux questions ci-dessous en vous appuyant sur le document de cours."
 }
@@ -248,6 +259,41 @@ function buildFallbackStructuredQuestions(exerciseType: CourseExerciseContent["e
       {
         id: "q4",
         prompt: "Explique brievement la regle appliquee dans ta transformation.",
+        question_type: "short_answer",
+      },
+    ]
+  }
+
+  if (exerciseType === "conjugation") {
+    return [
+      {
+        id: "q1",
+        prompt: "Quel choix applique correctement le temps verbal attendu ?",
+        question_type: "single_choice",
+        options: [
+          "La phrase utilise le bon temps selon le contexte.",
+          "La phrase melange les temps sans logique.",
+          "La phrase ignore completement le repere temporel.",
+        ],
+      },
+      {
+        id: "q2",
+        prompt: "Conjugue le verbe principal d'une phrase du document dans un autre temps adapte.",
+        question_type: "short_answer",
+      },
+      {
+        id: "q3",
+        prompt: "Quelle proposition respecte la forme verbale correcte ?",
+        question_type: "single_choice",
+        options: [
+          "La forme verbale est correcte pour le sujet et le temps.",
+          "La forme verbale est incorrecte pour le sujet.",
+          "La forme verbale ne correspond pas au temps demande.",
+        ],
+      },
+      {
+        id: "q4",
+        prompt: "Explique en francais pourquoi tu as choisi ce temps verbal.",
         question_type: "short_answer",
       },
     ]
@@ -411,6 +457,7 @@ function buildPrompt(input: GenerateCourseExercisesInput): string {
     "- Pour chaque question single_choice, fournis 3 ou 4 options.",
     "- Equilibre comprehension, vocabulaire et grammaire selon le document.",
     "- Si le document est lexical, privilegie vocabulaire + reutilisation en phrase.",
+    "- Si le document est sur la conjugaison, privilegie les temps verbaux et les transformations de phrases.",
     "- Si le document est grammatical, privilegie transformation/reformulation.",
     "",
     "Retourne uniquement du JSON valide, sans markdown.",

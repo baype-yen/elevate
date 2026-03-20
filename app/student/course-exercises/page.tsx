@@ -56,6 +56,7 @@ function typeLabel(type: string) {
   const key = (type || "").toLowerCase()
   if (key === "reading") return "Lecture"
   if (key === "vocabulary") return "Vocabulaire"
+  if (key === "conjugation") return "Conjugaison"
   if (key === "grammar") return "Grammaire"
   if (key === "mixed") return "Mixte"
   return "Exercice"
@@ -194,6 +195,43 @@ function fallbackStructuredQuestions(type: string): CourseExerciseQuestion[] {
       {
         id: "q4",
         prompt: "Explique en francais la regle appliquee dans ta transformation.",
+        questionType: "short_answer",
+        options: [],
+      },
+    ]
+  }
+
+  if (key === "conjugation") {
+    return [
+      {
+        id: "q1",
+        prompt: "Quelle option utilise le bon temps verbal ?",
+        questionType: "single_choice",
+        options: [
+          "La phrase respecte le temps demande.",
+          "La phrase utilise un temps incompatible.",
+          "La phrase omet le verbe correctement conjugue.",
+        ],
+      },
+      {
+        id: "q2",
+        prompt: "Conjugue un verbe du document dans le temps demande.",
+        questionType: "short_answer",
+        options: [],
+      },
+      {
+        id: "q3",
+        prompt: "Quelle proposition est correcte pour ce sujet et ce temps ?",
+        questionType: "single_choice",
+        options: [
+          "La forme verbale est correcte.",
+          "La forme verbale est incorrecte.",
+          "La forme verbale est au mauvais temps.",
+        ],
+      },
+      {
+        id: "q4",
+        prompt: "Explique en francais pourquoi ce temps est adapte au contexte.",
         questionType: "short_answer",
         options: [],
       },
@@ -342,7 +380,7 @@ function normalizeCourseExerciseRow(exercise: any): CourseExerciseRow {
     : null
 
   const materialType = typeof exercise.materialType === "string"
-    && ["text", "vocabulary", "grammar"].includes(exercise.materialType)
+    && ["text", "vocabulary", "conjugation", "grammar"].includes(exercise.materialType)
     ? (exercise.materialType as CourseMaterialTypeKey)
     : null
 
@@ -568,10 +606,14 @@ export default function StudentCourseExercisesPage() {
     const questions = resolvedQuestions(exercise)
     const answers = exerciseAnswers[exercise.id] || {}
     const missingAnswerCount = questions.filter((question) => !(answers[question.id] || "").trim()).length
-    const isGrammarExercise = exercise.materialType === "grammar" || exercise.type.toLowerCase() === "grammar"
+    const isGrammarExercise = ["grammar", "conjugation"].includes(exercise.materialType || "")
+      || ["grammar", "conjugation"].includes(exercise.type.toLowerCase())
     const grammarLessonHref = exercise.sourceDocumentId
       ? `/student/grammar-lessons?document=${encodeURIComponent(exercise.sourceDocumentId)}`
       : "/student/grammar-lessons"
+    const lessonLinkClass = exercise.materialType === "conjugation"
+      ? "border-navy-light/40 bg-navy-light/10 text-navy hover:bg-navy-light/15"
+      : "border-violet/35 bg-violet/10 text-violet hover:bg-violet/15"
 
     return (
       <div
@@ -604,9 +646,12 @@ export default function StudentCourseExercisesPage() {
               <div className="mt-2">
                 <Link
                   href={grammarLessonHref}
-                  className="inline-flex items-center rounded-md border border-watermelon/35 bg-watermelon/10 px-2.5 py-1.5 font-sans text-[12px] font-semibold text-watermelon hover:bg-watermelon/15 transition-colors"
+                  className={cn(
+                    "inline-flex items-center rounded-md border px-2.5 py-1.5 font-sans text-[12px] font-semibold transition-colors",
+                    lessonLinkClass,
+                  )}
                 >
-                  Voir la leçon de grammaire
+                  Voir la leçon
                 </Link>
               </div>
             )}
@@ -733,7 +778,8 @@ export default function StudentCourseExercisesPage() {
           {[
             { key: "text" as const, label: "Bleu = Textes" },
             { key: "vocabulary" as const, label: "Orange = Vocabulaire" },
-            { key: "grammar" as const, label: "Rouge = Règles" },
+            { key: "conjugation" as const, label: "Bleu clair = Conjugaison" },
+            { key: "grammar" as const, label: "Violet = Règles" },
           ].map((legend) => {
             const theme = courseMaterialTheme(legend.key)
             return (

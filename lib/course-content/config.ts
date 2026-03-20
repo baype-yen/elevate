@@ -13,6 +13,7 @@ const COURSE_TOPIC_LABELS: Record<CourseTopicKey, string> = {
 export const COURSE_MATERIAL_TYPE_OPTIONS = [
   { value: "text", label: "Textes" },
   { value: "vocabulary", label: "Vocabulaire" },
+  { value: "conjugation", label: "Conjugaison" },
   { value: "grammar", label: "Règles de grammaire" },
 ] as const
 
@@ -21,6 +22,7 @@ export type CourseMaterialTypeKey = (typeof COURSE_MATERIAL_TYPE_OPTIONS)[number
 const COURSE_MATERIAL_TYPE_LABELS: Record<CourseMaterialTypeKey, string> = {
   text: "Textes",
   vocabulary: "Vocabulaire",
+  conjugation: "Conjugaison",
   grammar: "Règles de grammaire",
 }
 
@@ -53,14 +55,23 @@ const COURSE_MATERIAL_THEMES: Record<CourseMaterialTypeKey, CourseMaterialTheme>
     memoryLabel: "Orange",
     memoryHint: "Orange = Vocabulaire",
   },
-  grammar: {
-    dotBg: "bg-watermelon",
-    badgeBg: "bg-watermelon",
+  conjugation: {
+    dotBg: "bg-navy-light",
+    badgeBg: "bg-navy-light",
     badgeText: "text-white",
-    panelBg: "bg-watermelon/15",
-    panelBorder: "border-watermelon/55",
-    memoryLabel: "Rouge",
-    memoryHint: "Rouge = Règles de grammaire",
+    panelBg: "bg-navy-light/12",
+    panelBorder: "border-navy-light/45",
+    memoryLabel: "Bleu clair",
+    memoryHint: "Bleu clair = Conjugaison",
+  },
+  grammar: {
+    dotBg: "bg-violet",
+    badgeBg: "bg-violet",
+    badgeText: "text-white",
+    panelBg: "bg-violet/14",
+    panelBorder: "border-violet/45",
+    memoryLabel: "Violet",
+    memoryHint: "Violet = Règles de grammaire",
   },
 }
 

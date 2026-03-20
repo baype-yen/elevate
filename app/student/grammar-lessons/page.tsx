@@ -165,7 +165,7 @@ export default function StudentGrammarLessonsPage() {
         <div>
           <h3 className="font-serif text-xl font-bold text-navy mb-1">Leçons de grammaire</h3>
           <p className="text-[13px] text-text-mid">
-            Retrouve les bases de grammaire liees a tes exercices, y compris les sources internes du professeur.
+            Retrouve les bases de grammaire et de conjugaison liees a tes exercices, y compris les sources internes du professeur.
           </p>
         </div>
         <Link
