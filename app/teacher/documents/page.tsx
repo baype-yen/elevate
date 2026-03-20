@@ -8,7 +8,17 @@ import { auth, db, storage } from "@/lib/firebase/client"
 import { useAppContext } from "@/hooks/use-app-context"
 import { fetchTeacherDocumentsData } from "@/lib/firebase/client-data"
 import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage"
-import { collection, addDoc, deleteDoc, doc, updateDoc, getDocs, query, where, serverTimestamp } from "firebase/firestore"
+import {
+  collection,
+  addDoc,
+  deleteDoc,
+  doc,
+  updateDoc,
+  getDocs,
+  query,
+  where,
+  serverTimestamp,
+} from "firebase/firestore"
 import {
   COURSE_SOURCE_TEXT_MIN_LENGTH,
   COURSE_MATERIAL_TYPE_OPTIONS,
@@ -60,20 +70,18 @@ export default function DocumentsPage() {
   const [shareClassIds, setShareClassIds] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
   const [generatingDocumentId, setGeneratingDocumentId] = useState<string | null>(null)
-  const [editingMetaDocumentId, setEditingMetaDocumentId] = useState<string | null>(null)
-  const [savingMetaDocumentId, setSavingMetaDocumentId] = useState<string | null>(null)
+
+  const [editingDocumentId, setEditingDocumentId] = useState<string | null>(null)
+  const [savingDocumentId, setSavingDocumentId] = useState<string | null>(null)
   const [titleDraftByDocument, setTitleDraftByDocument] = useState<Record<string, string>>({})
   const [topicDraftByDocument, setTopicDraftByDocument] = useState<Record<string, CourseTopicKey>>({})
   const [materialDraftByDocument, setMaterialDraftByDocument] = useState<Record<string, CourseMaterialTypeKey>>({})
-  const [editingSourceDocumentId, setEditingSourceDocumentId] = useState<string | null>(null)
-  const [savingSourceDocumentId, setSavingSourceDocumentId] = useState<string | null>(null)
   const [sourceDraftByDocument, setSourceDraftByDocument] = useState<Record<string, string>>({})
+
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [courseTopic, setCourseTopic] = useState<CourseTopicKey>("malls")
   const [courseMaterialType, setCourseMaterialType] = useState<CourseMaterialTypeKey>("text")
-  const [courseTextDocumentName, setCourseTextDocumentName] = useState("Lecon du jour - texte IA")
-  const [courseSourceText, setCourseSourceText] = useState("")
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const loadDocuments = async () => {
@@ -106,18 +114,7 @@ export default function DocumentsPage() {
     if (!file || !context) return
 
     if (context.activeSchoolId && classes.length && !shareClassIds.length) {
-      setError("Sélectionnez au moins une classe pour partager le document.")
-      return
-    }
-
-    const normalizedSourceText = courseSourceText.trim()
-    if (normalizedSourceText.length > 0 && normalizedSourceText.length < COURSE_SOURCE_TEXT_MIN_LENGTH) {
-      setError(`Le contenu texte pour IA doit contenir au moins ${COURSE_SOURCE_TEXT_MIN_LENGTH} caracteres.`)
-      return
-    }
-
-    if (normalizedSourceText.length > 50000) {
-      setError("Le contenu texte pour IA est trop long (max 50 000 caractères).")
+      setError("Selectionnez au moins une classe pour partager le document.")
       return
     }
 
@@ -145,7 +142,7 @@ export default function DocumentsPage() {
         size_bytes: file.size,
         course_topic: courseTopic,
         course_material_type: courseMaterialType,
-        course_source_text: normalizedSourceText || null,
+        course_source_text: null,
         created_at: serverTimestamp(),
         updated_at: serverTimestamp(),
       })
@@ -167,18 +164,96 @@ export default function DocumentsPage() {
           actor_id: context.userId,
           event_type: "document_uploaded",
           payload: {
-            text: `${file.name} a été partagé avec ${shareClassIds.length} classe(s).`,
+            text: `${file.name} a ete partage avec ${shareClassIds.length} classe(s).`,
           },
           created_at: serverTimestamp(),
         })
       }
 
-      setSuccess(`Document « ${file.name} » televerse avec succes. Cliquez sur "Exercices IA" pour generer les activites eleves.`)
+      setSuccess(`Document « ${file.name} » televerse. Cliquez sur "Modifier" pour ajouter le texte IA, puis "Exercices IA".`)
       await loadDocuments()
     } catch (e: any) {
-      setError(e.message || "Le téléversement du document a échoué.")
+      setError(e.message || "Le televersement du document a echoue.")
     } finally {
       setBusy(false)
+    }
+  }
+
+  const onToggleEditor = (documentRow: DocumentRow) => {
+    setError(null)
+    setSuccess(null)
+
+    setEditingDocumentId((previous) => {
+      if (previous === documentRow.id) return null
+      return documentRow.id
+    })
+
+    setTitleDraftByDocument((previous) => {
+      if (Object.prototype.hasOwnProperty.call(previous, documentRow.id)) return previous
+      return { ...previous, [documentRow.id]: documentRow.name }
+    })
+
+    setTopicDraftByDocument((previous) => {
+      if (Object.prototype.hasOwnProperty.call(previous, documentRow.id)) return previous
+      return { ...previous, [documentRow.id]: documentRow.topicKey || "malls" }
+    })
+
+    setMaterialDraftByDocument((previous) => {
+      if (Object.prototype.hasOwnProperty.call(previous, documentRow.id)) return previous
+      return { ...previous, [documentRow.id]: documentRow.materialType || "text" }
+    })
+
+    setSourceDraftByDocument((previous) => {
+      if (Object.prototype.hasOwnProperty.call(previous, documentRow.id)) return previous
+      return { ...previous, [documentRow.id]: documentRow.sourceText || "" }
+    })
+  }
+
+  const onSaveDocument = async (documentRow: DocumentRow) => {
+    if (!context) return
+
+    const titleDraft = titleDraftByDocument[documentRow.id] ?? documentRow.name
+    const normalizedTitle = titleDraft.trim()
+    const nextTopic = topicDraftByDocument[documentRow.id] || documentRow.topicKey || "malls"
+    const nextMaterialType = materialDraftByDocument[documentRow.id] || documentRow.materialType || "text"
+    const sourceDraft = sourceDraftByDocument[documentRow.id] ?? documentRow.sourceText
+    const normalizedSourceText = sourceDraft.trim()
+
+    if (normalizedTitle.length < 3) {
+      setError("Le titre du document doit contenir au moins 3 caracteres.")
+      return
+    }
+
+    if (normalizedSourceText.length < COURSE_SOURCE_TEXT_MIN_LENGTH) {
+      setError(`Le contenu texte pour IA doit contenir au moins ${COURSE_SOURCE_TEXT_MIN_LENGTH} caracteres.`)
+      return
+    }
+
+    if (normalizedSourceText.length > 50000) {
+      setError("Le contenu texte pour IA est trop long (max 50 000 caracteres).")
+      return
+    }
+
+    try {
+      setSavingDocumentId(documentRow.id)
+      setError(null)
+      setSuccess(null)
+
+      await updateDoc(doc(db, "documents", documentRow.id), {
+        name: normalizedTitle,
+        course_topic: nextTopic,
+        course_material_type: nextMaterialType,
+        course_source_text: normalizedSourceText,
+        updated_at: serverTimestamp(),
+      })
+
+      setSuccess(`Document « ${normalizedTitle} » mis a jour.`)
+      setEditingDocumentId(null)
+      await loadDocuments()
+    } catch (e: any) {
+      setError(e.message || "Impossible de modifier ce document.")
+    } finally {
+      setSavingDocumentId(null)
     }
   }
 
@@ -208,7 +283,7 @@ export default function DocumentsPage() {
       }
 
       if (!response.ok) {
-        throw new Error(payload.error || "La génération IA a échoué.")
+        throw new Error(payload.error || "La generation IA a echoue.")
       }
 
       const createdCount = payload.created || 0
@@ -216,233 +291,19 @@ export default function DocumentsPage() {
       const targeted = payload.studentsTargeted || 0
 
       setSuccess(
-        `Génération IA terminée : ${createdCount} exercice(s) créé(s), ${skippedCount} élève(s) déjà traités sur ${targeted}.`,
+        `Generation IA terminee : ${createdCount} exercice(s) cree(s), ${skippedCount} eleve(s) deja traites sur ${targeted}.`,
       )
     } catch (e: any) {
-      setError(e.message || "Impossible de générer des exercices depuis ce document.")
+      setError(e.message || "Impossible de generer des exercices depuis ce document.")
     } finally {
       setGeneratingDocumentId(null)
-    }
-  }
-
-  const onCreateTextDocument = async () => {
-    if (!context) return
-
-    const normalizedName = courseTextDocumentName.trim()
-    if (normalizedName.length < 3) {
-      setError("Donnez un titre au document texte (minimum 3 caractères).")
-      return
-    }
-
-    if (context.activeSchoolId && classes.length && !shareClassIds.length) {
-      setError("Sélectionnez au moins une classe pour partager le document.")
-      return
-    }
-
-    const normalizedSourceText = courseSourceText.trim()
-    if (normalizedSourceText.length < COURSE_SOURCE_TEXT_MIN_LENGTH) {
-      setError(`Le contenu texte pour IA doit contenir au moins ${COURSE_SOURCE_TEXT_MIN_LENGTH} caracteres.`)
-      return
-    }
-
-    if (normalizedSourceText.length > 50000) {
-      setError("Le contenu texte pour IA est trop long (max 50 000 caractères).")
-      return
-    }
-
-    try {
-      setBusy(true)
-      setError(null)
-      setSuccess(null)
-
-      const createdDocRef = await addDoc(collection(db, "documents"), {
-        school_id: context.activeSchoolId,
-        owner_id: context.userId,
-        name: normalizedName,
-        file_path: null,
-        mime_type: "text/plain",
-        size_bytes: normalizedSourceText.length,
-        course_topic: courseTopic,
-        course_material_type: courseMaterialType,
-        course_source_text: normalizedSourceText,
-        created_at: serverTimestamp(),
-        updated_at: serverTimestamp(),
-      })
-
-      if (context.activeSchoolId && shareClassIds.length) {
-        for (const classId of shareClassIds) {
-          await addDoc(collection(db, "document_shares"), {
-            document_id: createdDocRef.id,
-            school_id: context.activeSchoolId,
-            class_id: classId,
-            shared_by: context.userId,
-            created_at: serverTimestamp(),
-          })
-        }
-
-        await addDoc(collection(db, "activity_events"), {
-          school_id: context.activeSchoolId,
-          class_id: shareClassIds[0] || null,
-          actor_id: context.userId,
-          event_type: "document_uploaded",
-          payload: {
-            text: `Document texte IA « ${normalizedName} » partagé avec ${shareClassIds.length} classe(s).`,
-          },
-          created_at: serverTimestamp(),
-        })
-      }
-
-      setSuccess(`Document texte « ${normalizedName} » enregistré. Vous pouvez cliquer sur "Exercices IA".`)
-      setCourseSourceText("")
-      await loadDocuments()
-    } catch (e: any) {
-      setError(e.message || "Impossible d'enregistrer le document texte.")
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const onToggleSourceEditor = (documentRow: DocumentRow) => {
-    setError(null)
-    setSuccess(null)
-    setEditingMetaDocumentId(null)
-
-    setEditingSourceDocumentId((previous) => {
-      if (previous === documentRow.id) return null
-      return documentRow.id
-    })
-
-    setSourceDraftByDocument((previous) => {
-      if (Object.prototype.hasOwnProperty.call(previous, documentRow.id)) {
-        return previous
-      }
-
-      return {
-        ...previous,
-        [documentRow.id]: documentRow.sourceText || "",
-      }
-    })
-  }
-
-  const onToggleMetadataEditor = (documentRow: DocumentRow) => {
-    setError(null)
-    setSuccess(null)
-    setEditingSourceDocumentId(null)
-
-    setEditingMetaDocumentId((previous) => {
-      if (previous === documentRow.id) return null
-      return documentRow.id
-    })
-
-    setTitleDraftByDocument((previous) => {
-      if (Object.prototype.hasOwnProperty.call(previous, documentRow.id)) {
-        return previous
-      }
-
-      return {
-        ...previous,
-        [documentRow.id]: documentRow.name,
-      }
-    })
-
-    setTopicDraftByDocument((previous) => {
-      if (Object.prototype.hasOwnProperty.call(previous, documentRow.id)) {
-        return previous
-      }
-
-      return {
-        ...previous,
-        [documentRow.id]: documentRow.topicKey || "malls",
-      }
-    })
-
-    setMaterialDraftByDocument((previous) => {
-      if (Object.prototype.hasOwnProperty.call(previous, documentRow.id)) {
-        return previous
-      }
-
-      return {
-        ...previous,
-        [documentRow.id]: documentRow.materialType || "text",
-      }
-    })
-  }
-
-  const onSaveDocumentMetadata = async (documentRow: DocumentRow) => {
-    if (!context) return
-
-    const titleDraft = titleDraftByDocument[documentRow.id] ?? documentRow.name
-    const normalizedTitle = titleDraft.trim()
-    const nextTopic = topicDraftByDocument[documentRow.id] || documentRow.topicKey || "malls"
-    const nextMaterialType = materialDraftByDocument[documentRow.id] || documentRow.materialType || "text"
-
-    if (normalizedTitle.length < 3) {
-      setError("Le titre du document doit contenir au moins 3 caracteres.")
-      return
-    }
-
-    try {
-      setSavingMetaDocumentId(documentRow.id)
-      setError(null)
-      setSuccess(null)
-
-      await updateDoc(doc(db, "documents", documentRow.id), {
-        name: normalizedTitle,
-        course_topic: nextTopic,
-        course_material_type: nextMaterialType,
-        updated_at: serverTimestamp(),
-      })
-
-      setSuccess(`Document « ${normalizedTitle} » mis a jour.`)
-      setEditingMetaDocumentId(null)
-      await loadDocuments()
-    } catch (e: any) {
-      setError(e.message || "Impossible de modifier ce document.")
-    } finally {
-      setSavingMetaDocumentId(null)
-    }
-  }
-
-  const onSaveSourceText = async (documentRow: DocumentRow) => {
-    if (!context) return
-
-    const draft = sourceDraftByDocument[documentRow.id] ?? ""
-    const normalizedSourceText = draft.trim()
-
-    if (normalizedSourceText.length < COURSE_SOURCE_TEXT_MIN_LENGTH) {
-      setError(`Le contenu texte pour IA doit contenir au moins ${COURSE_SOURCE_TEXT_MIN_LENGTH} caracteres.`)
-      return
-    }
-
-    if (normalizedSourceText.length > 50000) {
-      setError("Le contenu texte pour IA est trop long (max 50 000 caractères).")
-      return
-    }
-
-    try {
-      setSavingSourceDocumentId(documentRow.id)
-      setError(null)
-      setSuccess(null)
-
-      await updateDoc(doc(db, "documents", documentRow.id), {
-        course_source_text: normalizedSourceText,
-        updated_at: serverTimestamp(),
-      })
-
-      setSuccess(`Source texte IA enregistrée pour « ${documentRow.name} ».`)
-      setEditingSourceDocumentId(null)
-      await loadDocuments()
-    } catch (e: any) {
-      setError(e.message || "Impossible d'enregistrer le texte IA.")
-    } finally {
-      setSavingSourceDocumentId(null)
     }
   }
 
   const onDeleteDocument = async (documentRow: DocumentRow) => {
     if (!context) return
 
-    const confirmed = window.confirm(`Supprimer définitivement « ${documentRow.name} » ?`)
+    const confirmed = window.confirm(`Supprimer definitivement « ${documentRow.name} » ?`)
     if (!confirmed) return
 
     try {
@@ -454,7 +315,7 @@ export default function DocumentsPage() {
         try {
           await deleteObject(ref(storage, documentRow.filePath))
         } catch {
-          // File may already be missing in storage; continue with Firestore cleanup.
+          // Continue even if storage file is missing.
         }
       }
 
@@ -465,15 +326,11 @@ export default function DocumentsPage() {
 
       await deleteDoc(doc(db, "documents", documentRow.id))
 
-      if (editingSourceDocumentId === documentRow.id) {
-        setEditingSourceDocumentId(null)
+      if (editingDocumentId === documentRow.id) {
+        setEditingDocumentId(null)
       }
 
-      if (editingMetaDocumentId === documentRow.id) {
-        setEditingMetaDocumentId(null)
-      }
-
-      setSuccess(`Document « ${documentRow.name} » supprimé.`)
+      setSuccess(`Document « ${documentRow.name} » supprime.`)
       await loadDocuments()
     } catch (e: any) {
       setError(e.message || "Impossible de supprimer ce document.")
@@ -482,24 +339,24 @@ export default function DocumentsPage() {
     }
   }
 
-  const openDocument = async (document: DocumentRow, download = false) => {
-    if (!document.filePath) {
-      setError("Ce document ne contient pas de fichier televerse. Utilisez \"Texte IA\" pour gerer son contenu texte.")
+  const openDocument = async (documentRow: DocumentRow, download = false) => {
+    if (!documentRow.filePath) {
+      setError("Ce document n'a pas de fichier televerse.")
       return
     }
 
     try {
       setError(null)
-      const storageRef = ref(storage, document.filePath)
+      const storageRef = ref(storage, documentRow.filePath)
       const url = await getDownloadURL(storageRef)
 
       if (download) {
-        const a = window.document.createElement("a")
-        a.href = url
-        a.download = document.name
-        a.target = "_blank"
-        a.rel = "noopener noreferrer"
-        a.click()
+        const anchor = window.document.createElement("a")
+        anchor.href = url
+        anchor.download = documentRow.name
+        anchor.target = "_blank"
+        anchor.rel = "noopener noreferrer"
+        anchor.click()
       } else {
         window.open(url, "_blank", "noopener,noreferrer")
       }
@@ -517,10 +374,10 @@ export default function DocumentsPage() {
       <div className="flex justify-between items-center mb-5">
         <div>
           <h3 className="font-serif text-xl font-bold text-navy mb-1">Documents de cours</h3>
-          <p className="text-[13px] text-text-mid">Ressources partagées et supports</p>
+          <p className="text-[13px] text-text-mid">Flux simple: Televerser puis Modifier (texte IA) puis Exercices IA</p>
         </div>
         <ElevateButton variant="primary" size="sm" icon={<Icons.Plus />} onClick={onUploadClick} disabled={busy}>
-          {busy ? "Téléversement..." : "Téléverser"}
+          {busy ? "Televersement..." : "Televerser"}
         </ElevateButton>
       </div>
 
@@ -535,11 +392,11 @@ export default function DocumentsPage() {
               options={classes.map((classItem) => ({ value: classItem.id, label: classItem.name }))}
             />
           ) : (
-            <div className="font-sans text-sm text-text-mid">Créez une classe pour partager les documents avec vos élèves.</div>
+            <div className="font-sans text-sm text-text-mid">Creez une classe pour partager les documents avec vos eleves.</div>
           )}
 
           <div>
-            <div className="font-sans text-[13px] font-semibold text-navy mb-2">Topic du cours</div>
+            <div className="font-sans text-[13px] font-semibold text-navy mb-2">Topic par defaut pour le prochain upload</div>
             <BadgeChooser
               selected={courseTopic}
               onSelect={(value) => setCourseTopic(String(value) as CourseTopicKey)}
@@ -548,7 +405,7 @@ export default function DocumentsPage() {
           </div>
 
           <div>
-            <div className="font-sans text-[13px] font-semibold text-navy mb-2">Type de contenu</div>
+            <div className="font-sans text-[13px] font-semibold text-navy mb-2">Type par defaut pour le prochain upload</div>
             <BadgeChooser
               selected={courseMaterialType}
               onSelect={(value) => setCourseMaterialType(String(value) as CourseMaterialTypeKey)}
@@ -568,30 +425,6 @@ export default function DocumentsPage() {
                   </div>
                 )
               })}
-            </div>
-          </div>
-
-          <div>
-            <div className="font-sans text-[13px] font-semibold text-navy mb-1.5">Contenu texte pour IA (obligatoire pour Exercices IA)</div>
-            <textarea
-              value={courseSourceText}
-              onChange={(event) => setCourseSourceText(event.target.value)}
-              placeholder={`Collez ici le texte, le vocabulaire et les regles vus en cours (minimum ${COURSE_SOURCE_TEXT_MIN_LENGTH} caracteres).`}
-              className="w-full min-h-[120px] rounded-[10px] border-2 border-gray-mid bg-card px-3.5 py-3 font-sans text-sm text-text-dark placeholder:text-text-light outline-none focus:border-navy focus:shadow-[0_0_0_3px_rgba(27,42,74,0.09)]"
-            />
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <input
-                value={courseTextDocumentName}
-                onChange={(event) => setCourseTextDocumentName(event.target.value)}
-                placeholder="Titre du document texte"
-                className="h-10 min-w-[250px] rounded-[10px] border-2 border-gray-mid bg-card px-3 font-sans text-sm text-text-dark placeholder:text-text-light outline-none focus:border-navy"
-              />
-              <ElevateButton size="sm" variant="secondary" onClick={onCreateTextDocument} disabled={busy}>
-                Enregistrer le texte comme document
-              </ElevateButton>
-            </div>
-            <div className="mt-1.5 font-sans text-[11px] text-text-light">
-              Mode strict: collez le texte puis cliquez sur "Enregistrer le texte comme document".
             </div>
           </div>
         </div>
@@ -615,6 +448,7 @@ export default function DocumentsPage() {
               <div className={cn("w-11 h-11 rounded-xl flex items-center justify-center text-[22px] shrink-0", documentRow.type === "PDF" ? "bg-watermelon/10 text-watermelon" : "bg-navy/10 text-navy")}>
                 <Icons.FileText />
               </div>
+
               <div className="flex-1 min-w-0">
                 <div className="font-sans text-sm font-semibold text-text-dark truncate">{documentRow.name}</div>
                 <div className="font-sans text-xs text-text-light">{documentRow.type} &middot; {documentRow.size} &middot; {documentRow.date}</div>
@@ -636,17 +470,12 @@ export default function DocumentsPage() {
                 )}
                 <div className="font-sans text-[11px] text-text-light mt-1 truncate">
                   {documentRow.hasSourceText
-                    ? "Source texte IA fournie"
-                    : `Source texte IA absente (minimum ${COURSE_SOURCE_TEXT_MIN_LENGTH} caracteres)`}
+                    ? "Source texte IA presente"
+                    : `Texte IA manquant (minimum ${COURSE_SOURCE_TEXT_MIN_LENGTH} caracteres) -> cliquez sur Modifier`}
                 </div>
-                {(!documentRow.topicKey || !documentRow.materialType) && (
-                  <div className="font-sans text-[11px] text-watermelon mt-1 truncate">
-                    Classez ce document avec un topic/type avant generation IA.
-                  </div>
-                )}
                 {!!documentRow.sharedClassNames.length && (
                   <div className="font-sans text-[11px] text-text-light mt-1 truncate">
-                    Partagé avec : {documentRow.sharedClassNames.join(", ")}
+                    Partage avec : {documentRow.sharedClassNames.join(", ")}
                   </div>
                 )}
               </div>
@@ -654,29 +483,10 @@ export default function DocumentsPage() {
               <ElevateButton
                 size="sm"
                 variant="outline"
-                onClick={() => onToggleMetadataEditor(documentRow)}
-                disabled={
-                  busy
-                  || savingMetaDocumentId === documentRow.id
-                  || savingSourceDocumentId === documentRow.id
-                  || generatingDocumentId === documentRow.id
-                }
+                onClick={() => onToggleEditor(documentRow)}
+                disabled={busy || savingDocumentId === documentRow.id || generatingDocumentId === documentRow.id}
               >
-                {editingMetaDocumentId === documentRow.id ? "Fermer" : "Modifier"}
-              </ElevateButton>
-
-              <ElevateButton
-                size="sm"
-                variant="outline"
-                onClick={() => onToggleSourceEditor(documentRow)}
-                disabled={
-                  busy
-                  || savingSourceDocumentId === documentRow.id
-                  || savingMetaDocumentId === documentRow.id
-                  || generatingDocumentId === documentRow.id
-                }
-              >
-                {editingSourceDocumentId === documentRow.id ? "Fermer" : "Texte IA"}
+                {editingDocumentId === documentRow.id ? "Fermer" : "Modifier"}
               </ElevateButton>
 
               <ElevateButton
@@ -697,33 +507,35 @@ export default function DocumentsPage() {
 
               <button
                 onClick={() => openDocument(documentRow, true)}
-                className="w-[34px] h-[34px] rounded-lg bg-gray-light flex items-center justify-center text-navy cursor-pointer hover:bg-gray-mid transition-colors shrink-0"
-                title="Télécharger"
-                disabled={!documentRow.filePath}
+                className="w-[34px] h-[34px] rounded-lg bg-gray-light flex items-center justify-center text-navy cursor-pointer hover:bg-gray-mid transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Telecharger"
+                disabled={!documentRow.filePath || documentRow.isTextOnly}
               >
                 <Icons.Download />
               </button>
+
               <button
                 onClick={() => openDocument(documentRow, false)}
-                className="w-[34px] h-[34px] rounded-lg bg-gray-light flex items-center justify-center text-navy cursor-pointer hover:bg-gray-mid transition-colors shrink-0"
-                title="Aperçu"
-                disabled={!documentRow.filePath}
+                className="w-[34px] h-[34px] rounded-lg bg-gray-light flex items-center justify-center text-navy cursor-pointer hover:bg-gray-mid transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Apercu"
+                disabled={!documentRow.filePath || documentRow.isTextOnly}
               >
                 <Icons.Eye />
               </button>
+
               <button
                 onClick={() => onDeleteDocument(documentRow)}
                 className="h-[34px] rounded-lg bg-watermelon/10 px-3 font-sans text-[12px] font-semibold text-watermelon cursor-pointer hover:bg-watermelon/20 transition-colors shrink-0"
                 title="Supprimer"
-                disabled={busy || generatingDocumentId === documentRow.id || savingSourceDocumentId === documentRow.id}
+                disabled={busy || generatingDocumentId === documentRow.id || savingDocumentId === documentRow.id}
               >
                 Supprimer
               </button>
             </div>
 
-            {editingMetaDocumentId === documentRow.id && (
+            {editingDocumentId === documentRow.id && (
               <div className="border-t border-gray-light px-4 pb-4 pt-3">
-                <div className="font-sans text-[12px] font-semibold text-navy mb-1.5">Modifier le titre et la categorie</div>
+                <div className="font-sans text-[12px] font-semibold text-navy mb-1.5">Modifier ce document (titre, categorie, texte IA)</div>
 
                 <div className="flex flex-col gap-3">
                   <input
@@ -762,57 +574,36 @@ export default function DocumentsPage() {
                       }))}
                     />
                   </div>
+
+                  <div>
+                    <div className="font-sans text-[12px] font-semibold text-navy mb-1.5">Texte IA (obligatoire)</div>
+                    <textarea
+                      value={sourceDraftByDocument[documentRow.id] ?? documentRow.sourceText}
+                      onChange={(event) => setSourceDraftByDocument((previous) => ({
+                        ...previous,
+                        [documentRow.id]: event.target.value,
+                      }))}
+                      placeholder={`Collez la lecon ici (minimum ${COURSE_SOURCE_TEXT_MIN_LENGTH} caracteres).`}
+                      className="w-full min-h-[140px] rounded-[10px] border-2 border-gray-mid bg-card px-3.5 py-3 font-sans text-sm text-text-dark placeholder:text-text-light outline-none focus:border-navy focus:shadow-[0_0_0_3px_rgba(27,42,74,0.09)]"
+                    />
+                  </div>
                 </div>
 
                 <div className="mt-2 flex items-center gap-2.5">
                   <ElevateButton
                     size="sm"
                     variant="primary"
-                    onClick={() => onSaveDocumentMetadata(documentRow)}
-                    disabled={savingMetaDocumentId === documentRow.id}
+                    onClick={() => onSaveDocument(documentRow)}
+                    disabled={savingDocumentId === documentRow.id}
                   >
-                    {savingMetaDocumentId === documentRow.id ? "Enregistrement..." : "Enregistrer les modifications"}
+                    {savingDocumentId === documentRow.id ? "Enregistrement..." : "Enregistrer"}
                   </ElevateButton>
-                  <ElevateButton
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => setEditingMetaDocumentId(null)}
-                    disabled={savingMetaDocumentId === documentRow.id}
-                  >
-                    Annuler
-                  </ElevateButton>
-                </div>
-              </div>
-            )}
 
-            {editingSourceDocumentId === documentRow.id && (
-              <div className="border-t border-gray-light px-4 pb-4 pt-3">
-                <div className="font-sans text-[12px] font-semibold text-navy mb-1.5">
-                  Coller et enregistrer le texte de cours pour l'IA
-                </div>
-                <textarea
-                  value={sourceDraftByDocument[documentRow.id] ?? ""}
-                  onChange={(event) => setSourceDraftByDocument((previous) => ({
-                    ...previous,
-                    [documentRow.id]: event.target.value,
-                  }))}
-                  placeholder={`Minimum ${COURSE_SOURCE_TEXT_MIN_LENGTH} caracteres.`}
-                  className="w-full min-h-[140px] rounded-[10px] border-2 border-gray-mid bg-card px-3.5 py-3 font-sans text-sm text-text-dark placeholder:text-text-light outline-none focus:border-navy focus:shadow-[0_0_0_3px_rgba(27,42,74,0.09)]"
-                />
-                <div className="mt-2 flex items-center gap-2.5">
-                  <ElevateButton
-                    size="sm"
-                    variant="primary"
-                    onClick={() => onSaveSourceText(documentRow)}
-                    disabled={savingSourceDocumentId === documentRow.id}
-                  >
-                    {savingSourceDocumentId === documentRow.id ? "Enregistrement..." : "Enregistrer le texte IA"}
-                  </ElevateButton>
                   <ElevateButton
                     size="sm"
                     variant="ghost"
-                    onClick={() => setEditingSourceDocumentId(null)}
-                    disabled={savingSourceDocumentId === documentRow.id}
+                    onClick={() => setEditingDocumentId(null)}
+                    disabled={savingDocumentId === documentRow.id}
                   >
                     Annuler
                   </ElevateButton>
@@ -821,8 +612,9 @@ export default function DocumentsPage() {
             )}
           </div>
         ))}
+
         {!documents.length && (
-          <div className="font-sans text-sm text-text-mid px-1 py-2">Aucun document téléversé pour le moment.</div>
+          <div className="font-sans text-sm text-text-mid px-1 py-2">Aucun document televerse pour le moment.</div>
         )}
       </div>
     </div>
