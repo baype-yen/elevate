@@ -67,6 +67,105 @@ function toIsoString(value: any): string {
   return new Date().toISOString()
 }
 
+function toDateMs(value: any): number {
+  if (!value) return 0
+  if (typeof value?.toDate === "function") {
+    return value.toDate().getTime()
+  }
+  if (value instanceof Date) return value.getTime()
+  if (typeof value === "string") {
+    const parsed = Date.parse(value)
+    return Number.isNaN(parsed) ? 0 : parsed
+  }
+  return 0
+}
+
+async function resolveEnrollmentBaselineLevel(params: {
+  studentId: string
+  activeSchoolId: string | null
+  profileLevel: unknown
+}): Promise<CefrLevel> {
+  const fallback = normalizeCefrLevel(params.profileLevel || "b1")
+
+  const enrollmentSnap = await adminDb
+    .collection("class_enrollments")
+    .where("student_id", "==", params.studentId)
+    .where("status", "==", "active")
+    .get()
+
+  if (enrollmentSnap.empty) return fallback
+
+  const rawEnrollments = enrollmentSnap.docs
+    .map((row) => row.data() || {})
+    .map((row: any) => ({
+      classId: typeof row.class_id === "string" ? row.class_id : "",
+      cefrLevel: typeof row.cefr_level === "string" ? row.cefr_level : null,
+      updatedAtMs: Math.max(toDateMs(row.updated_at), toDateMs(row.created_at)),
+    }))
+    .filter((row) => !!row.classId)
+
+  if (!rawEnrollments.length) return fallback
+
+  const classMap = new Map<string, any>()
+  for (const enrollment of rawEnrollments) {
+    if (classMap.has(enrollment.classId)) continue
+    const classSnap = await adminDb.collection("classes").doc(enrollment.classId).get()
+    if (classSnap.exists) {
+      classMap.set(enrollment.classId, classSnap.data() || null)
+    }
+  }
+
+  const activeRows = rawEnrollments.filter((enrollment) => {
+    const classRow = classMap.get(enrollment.classId)
+    if (!classRow) return false
+    if (classRow.archived_at) return false
+    return true
+  })
+
+  const sameSchoolRows = params.activeSchoolId
+    ? activeRows.filter((enrollment) => classMap.get(enrollment.classId)?.school_id === params.activeSchoolId)
+    : activeRows
+
+  const candidateRows = (sameSchoolRows.length ? sameSchoolRows : activeRows)
+    .sort((left, right) => right.updatedAtMs - left.updatedAtMs)
+
+  if (!candidateRows.length) return fallback
+
+  const selected = candidateRows[0]
+  const classRow = classMap.get(selected.classId)
+
+  return normalizeCefrLevel(selected.cefrLevel || classRow?.cefr_level || fallback)
+}
+
+async function clearAdaptiveLearningCards(studentId: string) {
+  const learningSnap = await adminDb
+    .collection("flashcards")
+    .where("student_id", "==", studentId)
+    .where("status", "==", "learning")
+    .get()
+
+  const adaptiveLearningIds = learningSnap.docs
+    .filter((row) => (row.data() || {}).source_kind === "adaptive_level")
+    .map((row) => row.id)
+
+  if (!adaptiveLearningIds.length) return 0
+
+  let deleted = 0
+  for (let index = 0; index < adaptiveLearningIds.length; index += 400) {
+    const batch = adminDb.batch()
+    const chunk = adaptiveLearningIds.slice(index, index + 400)
+
+    for (const cardId of chunk) {
+      batch.delete(adminDb.collection("flashcards").doc(cardId))
+      deleted += 1
+    }
+
+    await batch.commit()
+  }
+
+  return deleted
+}
+
 function uniqueOptions(options: unknown): string[] {
   if (!Array.isArray(options)) return []
   const rows: string[] = []
@@ -160,7 +259,11 @@ export async function getOrCreateAdaptiveProgress(studentId: string): Promise<Ad
   const profileSnap = await adminDb.collection("profiles").doc(studentId).get()
   const profile = profileSnap.exists ? profileSnap.data() : null
 
-  const fallbackLevel = normalizeCefrLevel(profile?.cefr_level || "b1")
+  const fallbackLevel = await resolveEnrollmentBaselineLevel({
+    studentId,
+    activeSchoolId: typeof profile?.active_school_id === "string" ? profile.active_school_id : null,
+    profileLevel: profile?.cefr_level,
+  })
   const schoolId = typeof profile?.active_school_id === "string" ? profile.active_school_id : null
 
   const progressRef = adminDb.collection("flashcard_progress").doc(studentId)
@@ -175,6 +278,7 @@ export async function getOrCreateAdaptiveProgress(studentId: string): Promise<Ad
       school_id: schoolId,
       levels: initialLevels,
       streaks: initialStreaks,
+      enrollment_level: fallbackLevel,
       created_at: new Date().toISOString(),
       updated_at: FieldValue.serverTimestamp(),
     })
@@ -188,8 +292,50 @@ export async function getOrCreateAdaptiveProgress(studentId: string): Promise<Ad
   }
 
   const existing = progressSnap.data() || {}
-  const levels = normalizeProgressLevels(existing.levels, fallbackLevel)
+  const existingLevels = normalizeProgressLevels(existing.levels, fallbackLevel)
+  const storedEnrollmentLevel = normalizeCefrLevel(existing.enrollment_level || fallbackLevel)
+  const requiresInitialBaselineSync = !existing.enrollment_level
+    && ADAPTIVE_CATEGORIES.some((category) => existingLevels[category] !== fallbackLevel)
+
+  if (storedEnrollmentLevel !== fallbackLevel || requiresInitialBaselineSync) {
+    const levels = levelMap(fallbackLevel)
+    const streaks = streakMap()
+
+    await clearAdaptiveLearningCards(studentId)
+
+    await progressRef.set(
+      {
+        student_id: studentId,
+        school_id: schoolId,
+        levels,
+        streaks,
+        enrollment_level: fallbackLevel,
+        synced_from_enrollment_at: new Date().toISOString(),
+        updated_at: FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    )
+
+    return {
+      studentId,
+      schoolId,
+      levels,
+      streaks,
+    }
+  }
+
+  const levels = existingLevels
   const streaks = normalizeProgressStreaks(existing.streaks)
+
+  if (!existing.enrollment_level) {
+    await progressRef.set(
+      {
+        enrollment_level: fallbackLevel,
+        updated_at: FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    )
+  }
 
   return {
     studentId,

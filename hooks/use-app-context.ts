@@ -6,6 +6,25 @@ import { onAuthStateChanged, getIdTokenResult } from "firebase/auth"
 import { doc, getDoc, getDocs, query, collection, where, updateDoc } from "firebase/firestore"
 import { auth, db } from "@/lib/firebase/client"
 
+const CEFR_LEVELS = new Set(["a1", "a2", "b1", "b2", "c1", "c2"])
+
+function normalizeLevel(level: unknown): string | null {
+  if (typeof level !== "string") return null
+  const normalized = level.trim().toLowerCase()
+  return CEFR_LEVELS.has(normalized) ? normalized : null
+}
+
+function toDateMs(value: any): number {
+  if (!value) return 0
+  if (typeof value?.toDate === "function") return value.toDate().getTime()
+  if (value instanceof Date) return value.getTime()
+  if (typeof value === "string") {
+    const parsed = Date.parse(value)
+    return Number.isNaN(parsed) ? 0 : parsed
+  }
+  return 0
+}
+
 export type AppContext = {
   userId: string
   fullName: string
@@ -78,12 +97,73 @@ export function useAppContext() {
         schoolName = schoolSnap.exists() ? schoolSnap.data()?.name || null : null
       }
 
+      let effectiveCefrLevel = normalizeLevel(profile?.cefr_level)
+
+      if ((profile?.default_role || "student") === "student") {
+        try {
+          const enrollmentsSnap = await getDocs(
+            query(
+              collection(db, "class_enrollments"),
+              where("student_id", "==", user.uid),
+              where("status", "==", "active"),
+            ),
+          )
+
+          const enrollments = enrollmentsSnap.docs.map((row) => ({
+            id: row.id,
+            ...row.data(),
+          })) as Array<Record<string, any>>
+
+          const classMap = new Map<string, any>()
+          for (const enrollment of enrollments) {
+            const classId = typeof enrollment.class_id === "string" ? enrollment.class_id : ""
+            if (!classId || classMap.has(classId)) continue
+            const classSnap = await getDoc(doc(db, "classes", classId))
+            if (classSnap.exists()) {
+              classMap.set(classId, classSnap.data())
+            }
+          }
+
+          const activeRows = enrollments.filter((enrollment) => {
+            const classId = typeof enrollment.class_id === "string" ? enrollment.class_id : ""
+            if (!classId) return false
+            const classRow = classMap.get(classId)
+            if (!classRow) return false
+            if (classRow.archived_at) return false
+            return true
+          })
+
+          const sameSchoolRows = activeSchoolId
+            ? activeRows.filter((enrollment) => {
+              const classId = typeof enrollment.class_id === "string" ? enrollment.class_id : ""
+              return classMap.get(classId)?.school_id === activeSchoolId
+            })
+            : activeRows
+
+          const candidates = (sameSchoolRows.length ? sameSchoolRows : activeRows)
+            .sort((left, right) => {
+              return Math.max(toDateMs(right.updated_at), toDateMs(right.created_at))
+                - Math.max(toDateMs(left.updated_at), toDateMs(left.created_at))
+            })
+
+          if (candidates.length) {
+            const selected = candidates[0]
+            const classRow = classMap.get(selected.class_id) || null
+            effectiveCefrLevel = normalizeLevel(selected.cefr_level)
+              || normalizeLevel(classRow?.cefr_level)
+              || effectiveCefrLevel
+          }
+        } catch {
+          // Keep profile fallback level if enrollment lookup fails
+        }
+      }
+
       if (mounted) {
         setContext({
           userId: user.uid,
           fullName: profile?.full_name || user.email || "User",
           defaultRole: (profile?.default_role || "student") as AppContext["defaultRole"],
-          cefrLevel: profile?.cefr_level ?? null,
+          cefrLevel: effectiveCefrLevel,
           activeSchoolId,
           membershipRole: (activeMembership?.role as AppContext["membershipRole"]) ?? null,
           schoolName,
