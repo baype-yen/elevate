@@ -56,8 +56,8 @@ type ClassRow = {
 type DocumentVisibilityMode = "student_visible" | "internal_teacher"
 
 const VISIBILITY_OPTIONS: Array<{ value: DocumentVisibilityMode; label: string }> = [
-  { value: "student_visible", label: "Visible eleves" },
-  { value: "internal_teacher", label: "Interne (non visible eleves)" },
+  { value: "student_visible", label: "Visible élèves" },
+  { value: "internal_teacher", label: "Interne (non visible élèves)" },
 ]
 
 function normalizeVisibilityMode(value: unknown): DocumentVisibilityMode {
@@ -116,7 +116,7 @@ export default function DocumentsPage() {
       topicKey: documentRow.topicKey || null,
       topicLabel: String(documentRow.topicLabel || "Ressource hors topic"),
       materialType: documentRow.materialType || null,
-      materialLabel: String(documentRow.materialLabel || "Non classe"),
+      materialLabel: String(documentRow.materialLabel || "Non classé"),
       sourceText: typeof documentRow.sourceText === "string" ? documentRow.sourceText : "",
       hasSourceText: !!documentRow.hasSourceText,
       visibilityMode: normalizeVisibilityMode(documentRow.visibilityMode),
@@ -173,7 +173,7 @@ export default function DocumentsPage() {
     if (!file || !context) return
 
     if (context.activeSchoolId && classes.length && !shareClassIds.length) {
-      setError("Selectionnez au moins une classe cible pour la generation IA.")
+      setError("Sélectionnez au moins une classe cible pour la génération IA.")
       return
     }
 
@@ -235,10 +235,10 @@ export default function DocumentsPage() {
         })
       }
 
-      setSuccess(`Document « ${file.name} » televerse. Cliquez sur "Modifier" pour ajouter le texte IA, puis "Exercices IA".`)
+      setSuccess(`Document « ${file.name} » téléversé. Cliquez sur "Modifier" pour ajouter le texte IA, puis "Exercices IA".`)
       await loadDocuments()
     } catch (e: any) {
-      setError(e.message || "Le televersement du document a echoue.")
+      setError(e.message || "Le téléversement du document a échoué.")
     } finally {
       setBusy(false)
     }
@@ -299,12 +299,12 @@ export default function DocumentsPage() {
     const normalizedSourceText = sourceDraft.trim()
 
     if (normalizedTitle.length < 3) {
-      setError("Le titre du document doit contenir au moins 3 caracteres.")
+      setError("Le titre du document doit contenir au moins 3 caractères.")
       return
     }
 
     if (context.activeSchoolId && classes.length && !nextTargetClassIds.length) {
-      setError("Selectionnez au moins une classe cible pour la generation IA.")
+      setError("Sélectionnez au moins une classe cible pour la génération IA.")
       return
     }
 
@@ -314,7 +314,7 @@ export default function DocumentsPage() {
     }
 
     if (normalizedSourceText.length > 50000) {
-      setError("Le contenu texte pour IA est trop long (max 50 000 caracteres).")
+      setError("Le contenu texte pour IA est trop long (max 50 000 caractères).")
       return
     }
 
@@ -370,8 +370,8 @@ export default function DocumentsPage() {
 
       setSuccess(
         nextVisibilityMode === "internal_teacher"
-          ? `Document « ${normalizedTitle} » mis a jour en mode interne (non visible eleves).`
-          : `Document « ${normalizedTitle} » mis a jour et partage avec ${nextTargetClassIds.length} classe(s).`,
+          ? `Document « ${normalizedTitle} » mis à jour en mode interne (non visible élèves).`
+          : `Document « ${normalizedTitle} » mis à jour et partagé avec ${nextTargetClassIds.length} classe(s).`,
       )
       setEditingDocumentId(null)
       await loadDocuments()
@@ -419,7 +419,7 @@ export default function DocumentsPage() {
       }
 
       if (!response.ok) {
-        throw new Error(payload.error || "La generation IA a echoue.")
+        throw new Error(payload.error || "La génération IA a échoué.")
       }
 
       const createdCount = payload.created || 0
@@ -432,16 +432,16 @@ export default function DocumentsPage() {
         const freshCount = payload.createdFreshTargets || 0
 
         setSuccess(
-          `Regeneration IA terminee : ${createdCount} exercice(s) cree(s), ${replacedCount} exercice(s) non termine(s) remplace(s), ${regeneratedCount} eleve(s) regeneres, ${freshCount} nouvel(le)(s) eleve(s), ${skippedCount} eleve(s) laisses intacts (deja termines) sur ${targeted}.`,
+          `Régénération IA terminée : ${createdCount} exercice(s) créé(s), ${replacedCount} exercice(s) non terminé(s) remplacé(s), ${regeneratedCount} élève(s) régénéré(s), ${freshCount} nouvel(le)(s) élève(s), ${skippedCount} élève(s) laissés intacts (déjà terminés) sur ${targeted}.`,
         )
         return
       }
 
       setSuccess(
-        `Generation IA terminee : ${createdCount} exercice(s) cree(s), ${skippedCount} eleve(s) deja traites sur ${targeted}.`,
+        `Génération IA terminée : ${createdCount} exercice(s) créé(s), ${skippedCount} élève(s) déjà traités sur ${targeted}.`,
       )
     } catch (e: any) {
-      setError(e.message || "Impossible de generer des exercices depuis ce document.")
+      setError(e.message || "Impossible de générer des exercices depuis ce document.")
     } finally {
       if (forceRegenerate) {
         setRegeneratingDocumentId(null)
@@ -457,7 +457,7 @@ export default function DocumentsPage() {
 
   const onRegenerateCourseExercises = async (documentRow: DocumentRow) => {
     const confirmed = window.confirm(
-      "Regenerer les exercices IA ? Cette action remplace uniquement les exercices non termines, et conserve les exercices deja termines.",
+      "Régénérer les exercices IA ? Cette action remplace uniquement les exercices non terminés, et conserve les exercices déjà terminés.",
     )
     if (!confirmed) return
 
@@ -467,7 +467,7 @@ export default function DocumentsPage() {
   const onDeleteDocument = async (documentRow: DocumentRow) => {
     if (!context) return
 
-    const confirmed = window.confirm(`Supprimer definitivement « ${documentRow.name} » ?`)
+    const confirmed = window.confirm(`Supprimer définitivement « ${documentRow.name} » ?`)
     if (!confirmed) return
 
     try {
@@ -494,7 +494,7 @@ export default function DocumentsPage() {
         setEditingDocumentId(null)
       }
 
-      setSuccess(`Document « ${documentRow.name} » supprime.`)
+      setSuccess(`Document « ${documentRow.name} » supprimé.`)
       await loadDocuments()
     } catch (e: any) {
       setError(e.message || "Impossible de supprimer ce document.")
@@ -505,7 +505,7 @@ export default function DocumentsPage() {
 
   const openDocument = async (documentRow: DocumentRow, download = false) => {
     if (!documentRow.filePath) {
-      setError("Ce document n'a pas de fichier televerse.")
+      setError("Ce document n'a pas de fichier téléversé.")
       return
     }
 
@@ -538,16 +538,16 @@ export default function DocumentsPage() {
       <div className="flex justify-between items-center mb-5">
         <div>
           <h3 className="font-serif text-xl font-bold text-navy mb-1">Documents de cours</h3>
-          <p className="text-[13px] text-text-mid">Flux simple: Televerser puis Modifier (texte IA) puis Exercices IA</p>
+          <p className="text-[13px] text-text-mid">Flux simple: Téléverser puis Modifier (texte IA) puis Exercices IA</p>
         </div>
         <ElevateButton variant="primary" size="sm" icon={<Icons.Plus />} onClick={onUploadClick} disabled={busy}>
-          {busy ? "Televersement..." : "Televerser"}
+          {busy ? "Téléversement..." : "Téléverser"}
         </ElevateButton>
       </div>
 
       {context?.activeSchoolId && (
         <div className="mb-5 p-4 rounded-xl border border-gray-light bg-off-white flex flex-col gap-4">
-          <div className="font-sans text-[13px] font-semibold text-navy mb-2">Classes cibles pour generation IA</div>
+          <div className="font-sans text-[13px] font-semibold text-navy mb-2">Classes cibles pour génération IA</div>
           {classes.length ? (
             <BadgeChooser
               multi
@@ -556,11 +556,11 @@ export default function DocumentsPage() {
               options={classes.map((classItem) => ({ value: classItem.id, label: classItem.name }))}
             />
           ) : (
-            <div className="font-sans text-sm text-text-mid">Creez une classe pour cibler la generation des exercices.</div>
+            <div className="font-sans text-sm text-text-mid">Créez une classe pour cibler la génération des exercices.</div>
           )}
 
           <div>
-            <div className="font-sans text-[13px] font-semibold text-navy mb-2">Visibilite du document</div>
+            <div className="font-sans text-[13px] font-semibold text-navy mb-2">Visibilité du document</div>
             <BadgeChooser
               selected={uploadVisibilityMode}
               onSelect={(value) => setUploadVisibilityMode(normalizeVisibilityMode(value))}
@@ -568,13 +568,13 @@ export default function DocumentsPage() {
             />
             <div className="mt-1.5 font-sans text-[11px] text-text-light">
               {uploadVisibilityMode === "internal_teacher"
-                ? "Mode interne: le document reste cache aux eleves, mais sert de base a la generation IA."
-                : "Mode visible eleves: le document apparait dans l'espace etudiant des classes ciblees."}
+                ? "Mode interne: le document reste caché aux élèves, mais sert de base à la génération IA."
+                : "Mode visible élèves: le document apparaît dans l'espace étudiant des classes ciblées."}
             </div>
           </div>
 
           <div>
-            <div className="font-sans text-[13px] font-semibold text-navy mb-2">Topic par defaut pour le prochain upload</div>
+            <div className="font-sans text-[13px] font-semibold text-navy mb-2">Topic par défaut pour le prochain upload</div>
             <BadgeChooser
               selected={courseTopic}
               onSelect={(value) => setCourseTopic(String(value) as CourseTopicKey)}
@@ -583,7 +583,7 @@ export default function DocumentsPage() {
           </div>
 
           <div>
-            <div className="font-sans text-[13px] font-semibold text-navy mb-2">Type par defaut pour le prochain upload</div>
+            <div className="font-sans text-[13px] font-semibold text-navy mb-2">Type par défaut pour le prochain upload</div>
             <BadgeChooser
               selected={courseMaterialType}
               onSelect={(value) => setCourseMaterialType(String(value) as CourseMaterialTypeKey)}
@@ -648,11 +648,11 @@ export default function DocumentsPage() {
                 )}
                 <div className="font-sans text-[11px] text-text-light mt-1 truncate">
                   {documentRow.hasSourceText
-                    ? "Source texte IA presente"
+                    ? "Source texte IA présente"
                     : "Texte IA manquant -> cliquez sur Modifier"}
                 </div>
                 <div className="font-sans text-[11px] text-text-light mt-1 truncate">
-                  Mode: {documentRow.visibilityMode === "internal_teacher" ? "Interne (non visible eleves)" : "Visible eleves"}
+                  Mode: {documentRow.visibilityMode === "internal_teacher" ? "Interne (non visible élèves)" : "Visible élèves"}
                 </div>
                 {!!documentRow.targetClassNames.length && (
                   <div className="font-sans text-[11px] text-text-light mt-1 truncate">
@@ -689,7 +689,7 @@ export default function DocumentsPage() {
                   || !documentRow.hasSourceText
                 }
               >
-                {generatingDocumentId === documentRow.id ? "Generation..." : "Exercices IA"}
+                {generatingDocumentId === documentRow.id ? "Génération..." : "Exercices IA"}
               </ElevateButton>
 
               <ElevateButton
@@ -706,13 +706,13 @@ export default function DocumentsPage() {
                   || !documentRow.hasSourceText
                 }
               >
-                {regeneratingDocumentId === documentRow.id ? "Regeneration..." : "Regenerer"}
+                {regeneratingDocumentId === documentRow.id ? "Régénération..." : "Régénérer"}
               </ElevateButton>
 
               <button
                 onClick={() => openDocument(documentRow, true)}
                 className="w-[34px] h-[34px] rounded-lg bg-gray-light flex items-center justify-center text-navy cursor-pointer hover:bg-gray-mid transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Telecharger"
+                title="Télécharger"
                 disabled={!documentRow.filePath || documentRow.isTextOnly}
               >
                 <Icons.Download />
@@ -721,7 +721,7 @@ export default function DocumentsPage() {
               <button
                 onClick={() => openDocument(documentRow, false)}
                 className="w-[34px] h-[34px] rounded-lg bg-gray-light flex items-center justify-center text-navy cursor-pointer hover:bg-gray-mid transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Apercu"
+                title="Aperçu"
                 disabled={!documentRow.filePath || documentRow.isTextOnly}
               >
                 <Icons.Eye />
@@ -744,7 +744,7 @@ export default function DocumentsPage() {
 
             {editingDocumentId === documentRow.id && (
               <div className="border-t border-gray-light px-4 pb-4 pt-3">
-                <div className="font-sans text-[12px] font-semibold text-navy mb-1.5">Modifier ce document (titre, categorie, visibilite, texte IA)</div>
+                <div className="font-sans text-[12px] font-semibold text-navy mb-1.5">Modifier ce document (titre, catégorie, visibilité, texte IA)</div>
 
                 <div className="flex flex-col gap-3">
                   <input
@@ -785,7 +785,7 @@ export default function DocumentsPage() {
                   </div>
 
                   <div>
-                    <div className="font-sans text-[12px] font-semibold text-navy mb-1.5">Visibilite du document</div>
+                    <div className="font-sans text-[12px] font-semibold text-navy mb-1.5">Visibilité du document</div>
                     <BadgeChooser
                       selected={visibilityDraftByDocument[documentRow.id] || documentRow.visibilityMode || "student_visible"}
                       onSelect={(value) => setVisibilityDraftByDocument((previous) => ({
@@ -797,7 +797,7 @@ export default function DocumentsPage() {
                   </div>
 
                   <div>
-                    <div className="font-sans text-[12px] font-semibold text-navy mb-1.5">Classes cibles pour generation IA</div>
+                    <div className="font-sans text-[12px] font-semibold text-navy mb-1.5">Classes cibles pour génération IA</div>
                     <BadgeChooser
                       multi
                       selected={targetClassDraftByDocument[documentRow.id] || documentRow.targetClassIds || []}
@@ -809,8 +809,8 @@ export default function DocumentsPage() {
                     />
                     <div className="mt-1.5 font-sans text-[11px] text-text-light">
                       {(visibilityDraftByDocument[documentRow.id] || documentRow.visibilityMode || "student_visible") === "internal_teacher"
-                        ? "Interne: ce document est utilise pour l'IA et reste cache aux eleves."
-                        : "Visible eleves: ce document sera aussi visible dans l'espace etudiant."}
+                        ? "Interne: ce document est utilisé pour l'IA et reste caché aux élèves."
+                        : "Visible élèves: ce document sera aussi visible dans l'espace étudiant."}
                     </div>
                   </div>
 
@@ -822,9 +822,26 @@ export default function DocumentsPage() {
                         ...previous,
                         [documentRow.id]: event.target.value,
                       }))}
-                      placeholder="Collez la lecon ici."
+                      placeholder="Collez la leçon ici."
                       className="w-full min-h-[140px] rounded-[10px] border-2 border-gray-mid bg-card px-3.5 py-3 font-sans text-sm text-text-dark placeholder:text-text-light outline-none focus:border-navy focus:shadow-[0_0_0_3px_rgba(27,42,74,0.09)]"
                     />
+
+                    <div className="mt-2 rounded-lg border border-gray-light bg-off-white px-3 py-2.5">
+                      <div className="font-sans text-[11px] font-semibold text-navy mb-1">Format recommandé pour la leçon interactive</div>
+                      <ul className="list-disc pl-4 space-y-1 font-sans text-[11px] text-text-mid">
+                        <li>Utilisez des titres de section: ## Titre de section</li>
+                        <li>Ajoutez des repères: Remarque:, Exemple:, Astuce:</li>
+                        <li>Pour un tableau, utilisez le séparateur | entre les colonnes</li>
+                      </ul>
+                      <pre className="mt-2 rounded-md border border-gray-mid bg-card px-2.5 py-2 font-mono text-[10px] text-text-mid whitespace-pre-wrap leading-relaxed">
+{`## Pronoms personnels et possessifs
+Remarque: Bien distinguer possessif adjectif et pronom possessif.
+| Sujet | Objet | Pronom possessif | Adjectif possessif |
+| I | me | mine | my |
+| We | us | ours | our |
+Exemple: This notebook is mine.`}
+                      </pre>
+                    </div>
                   </div>
                 </div>
 
@@ -861,7 +878,7 @@ export default function DocumentsPage() {
         ))}
 
         {!documents.length && (
-          <div className="font-sans text-sm text-text-mid px-1 py-2">Aucun document televerse pour le moment.</div>
+          <div className="font-sans text-sm text-text-mid px-1 py-2">Aucun document téléversé pour le moment.</div>
         )}
       </div>
     </div>

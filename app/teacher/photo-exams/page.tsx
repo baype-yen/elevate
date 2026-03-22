@@ -63,7 +63,7 @@ function buildAnalysisResult(params: { sourceText: string; examTitle: string; ce
   const cleanedText = normalizeOcrText(params.sourceText)
 
   if (cleanedText.length < 40) {
-    throw new Error("OCR trop faible: texte insuffisant. Essayez des photos plus nettes et bien eclairees.")
+    throw new Error("OCR trop faible: texte insuffisant. Essayez des photos plus nettes et bien éclairées.")
   }
 
   const analysis = analyzeExamMistakes(cleanedText)
@@ -211,7 +211,7 @@ export default function TeacherPhotoExamsPage() {
     }
 
     if (!imageFiles.length) {
-      setError(validationMessage || "Aucune image exploitable n'a ete selectionnee.")
+      setError(validationMessage || "Aucune image exploitable n'a été sélectionnée.")
       return
     }
 
@@ -245,12 +245,12 @@ export default function TeacherPhotoExamsPage() {
 
   const runPhotoAnalysis = async () => {
     if (!selectedClassId) {
-      setError("Selectionnez une classe avant de lancer l'analyse.")
+      setError("Sélectionnez une classe avant de lancer l'analyse.")
       return
     }
 
     if (!selectedStudentId || !selectedStudent) {
-      setError("Selectionnez un eleve avec acces actif.")
+      setError("Sélectionnez un élève avec accès actif.")
       return
     }
 
@@ -282,7 +282,7 @@ export default function TeacherPhotoExamsPage() {
           setOcrStatus(`OCR original ${index + 1}/${photos.length} - ${file.name}`)
           const originalResult = await worker.recognize(file)
 
-          setOcrStatus(`OCR optimise ${index + 1}/${photos.length} - ${file.name}`)
+          setOcrStatus(`OCR optimisé ${index + 1}/${photos.length} - ${file.name}`)
           let enhancedResultText = ""
           let enhancedConfidence = 0
 
@@ -341,10 +341,10 @@ export default function TeacherPhotoExamsPage() {
       setOcrReport(nextReport)
 
       const lowConfidenceSuffix = nextReport.averageConfidence < 55
-        ? " OCR faible: relisez et corrigez le texte extrait avant creation."
+        ? " OCR faible: relisez et corrigez le texte extrait avant création."
         : ""
 
-      setSuccess(`Analyse terminee. ${totalDetectedMistakes(nextAnalysisResult.analysis)} point(s) detecte(s).${lowConfidenceSuffix}`)
+      setSuccess(`Analyse terminée. ${totalDetectedMistakes(nextAnalysisResult.analysis)} point(s) détecté(s).${lowConfidenceSuffix}`)
     } catch (analysisError: any) {
       setError(analysisError?.message || "Impossible d'analyser les photos de copie.")
     } finally {
@@ -364,9 +364,9 @@ export default function TeacherPhotoExamsPage() {
         cefrLevel: selectedStudent.level || selectedClass?.level || "B1",
       })
       setAnalysisResult(nextAnalysisResult)
-      setSuccess(`Analyse mise a jour depuis le texte corrige. ${totalDetectedMistakes(nextAnalysisResult.analysis)} point(s) detecte(s).`)
+      setSuccess(`Analyse mise à jour depuis le texte corrigé. ${totalDetectedMistakes(nextAnalysisResult.analysis)} point(s) détecté(s).`)
     } catch (analysisError: any) {
-      setError(analysisError?.message || "Impossible de recalculer l'analyse depuis le texte corrige.")
+      setError(analysisError?.message || "Impossible de recalculer l'analyse depuis le texte corrigé.")
     }
   }
 
@@ -374,7 +374,7 @@ export default function TeacherPhotoExamsPage() {
     if (!context || !analysisResult || !selectedStudent || !selectedClass) return
 
     if (!context.activeSchoolId) {
-      setError("Aucun etablissement actif selectionne.")
+      setError("Aucun établissement actif sélectionné.")
       return
     }
 
@@ -417,18 +417,18 @@ export default function TeacherPhotoExamsPage() {
         target_user_id: selectedStudent.studentId,
         event_type: "assignment_created",
         payload: {
-          text: `Exercices personnalises generes depuis une copie photo pour ${selectedStudent.name}.`,
+          text: `Exercices personnalisés générés depuis une copie photo pour ${selectedStudent.name}.`,
         },
         created_at: serverTimestamp(),
       })
 
-      setSuccess("Exercices personnalises crees et envoyes a l'eleve.")
+      setSuccess("Exercices personnalisés créés et envoyés à l'élève.")
       setPhotos([])
       setAnalysisResult(null)
       setOcrDraftText("")
       setOcrReport(null)
     } catch (insertError: any) {
-      setError(insertError?.message || "Impossible de creer les exercices personnalises.")
+      setError(insertError?.message || "Impossible de créer les exercices personnalisés.")
     } finally {
       setBusy(false)
     }
@@ -443,9 +443,9 @@ export default function TeacherPhotoExamsPage() {
       <div className="bg-card rounded-[20px] border border-gray-mid p-6">
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
-            <h3 className="font-serif text-xl font-bold text-navy mb-1">Generateur OCR depuis photo</h3>
+            <h3 className="font-serif text-xl font-bold text-navy mb-1">Générateur OCR depuis photo</h3>
             <p className="font-sans text-[13px] text-text-mid">
-              Importez la copie d'examen d'un eleve, detectez ses erreurs, puis creez automatiquement des exercices cibles.
+              Importez la copie d'examen d'un élève, détectez ses erreurs, puis créez automatiquement des exercices ciblés.
             </p>
           </div>
           {selectedStudent && <LevelBadge level={selectedStudent.level} colorClass={levelColorClass(selectedStudent.level)} />}
@@ -458,11 +458,11 @@ export default function TeacherPhotoExamsPage() {
             icon={<Icons.Clipboard />}
             value={examTitle}
             onChange={setExamTitle}
-            helper="Ce titre sera repris dans les exercices generes."
+            helper="Ce titre sera repris dans les exercices générés."
           />
 
           <div>
-            <div className="font-sans text-[13px] font-semibold text-navy tracking-[0.02em] mb-1.5">Eleve cible</div>
+            <div className="font-sans text-[13px] font-semibold text-navy tracking-[0.02em] mb-1.5">Élève cible</div>
             <select
               value={selectedStudentId}
               onChange={(event) => {
@@ -473,7 +473,7 @@ export default function TeacherPhotoExamsPage() {
               }}
               className="w-full h-[50px] rounded-[10px] border-2 border-gray-mid bg-card px-3.5 font-sans text-[15px] text-text-dark outline-none focus:border-navy focus:shadow-[0_0_0_3px_rgba(27,42,74,0.09)]"
             >
-              {!students.length && <option value="">Aucun eleve avec acces actif</option>}
+              {!students.length && <option value="">Aucun élève avec accès actif</option>}
               {students.map((student) => (
                 <option key={student.studentId} value={student.studentId}>
                   {student.name} ({student.level})
@@ -500,12 +500,12 @@ export default function TeacherPhotoExamsPage() {
         <div className="mt-4 rounded-xl border border-gray-light bg-off-white p-4">
           <div className="font-sans text-[13px] font-semibold text-navy mb-2">Photos de copie ({photos.length}/{MAX_FILES})</div>
 
-          <div className="mb-3 rounded-lg border border-gray-light bg-card px-3 py-2.5">
-            <div className="font-sans text-xs font-semibold text-navy">Conseils photo pour OCR gratuit</div>
-            <div className="font-sans text-xs text-text-light mt-1 leading-relaxed">
-              Prendre la photo de face, lumiere uniforme, texte net, feuille complete visible, pas de doigts sur le texte. Priorite au mode scan de votre smartphone.
+            <div className="mb-3 rounded-lg border border-gray-light bg-card px-3 py-2.5">
+              <div className="font-sans text-xs font-semibold text-navy">Conseils photo pour OCR gratuit</div>
+              <div className="font-sans text-xs text-text-light mt-1 leading-relaxed">
+                Prendre la photo de face, lumière uniforme, texte net, feuille complète visible, pas de doigts sur le texte. Priorité au mode scan de votre smartphone.
+              </div>
             </div>
-          </div>
 
           {photos.length ? (
             <div className="flex flex-col gap-2">
@@ -522,7 +522,7 @@ export default function TeacherPhotoExamsPage() {
               ))}
             </div>
           ) : (
-            <div className="font-sans text-sm text-text-mid">Aucune photo importee.</div>
+            <div className="font-sans text-sm text-text-mid">Aucune photo importée.</div>
           )}
 
           <input
@@ -554,9 +554,9 @@ export default function TeacherPhotoExamsPage() {
         <div className="bg-card rounded-[20px] border border-gray-mid p-6 flex flex-col gap-4">
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div>
-              <h4 className="font-serif text-lg font-bold text-navy">Resultat de l'analyse OCR</h4>
+              <h4 className="font-serif text-lg font-bold text-navy">Résultat de l'analyse OCR</h4>
               <p className="font-sans text-[13px] text-text-mid">
-                {detectedCount} point(s) detecte(s). {analysisResult.exercises.length} exercice(s) pret(s) a etre crees.
+                {detectedCount} point(s) détecté(s). {analysisResult.exercises.length} exercice(s) prêt(s) à être créés.
               </p>
               {ocrReport && (
                 <p className="font-sans text-xs text-text-light mt-1">
@@ -566,7 +566,7 @@ export default function TeacherPhotoExamsPage() {
             </div>
             <div className="flex gap-2">
               <ElevateButton variant="primary" icon={<Icons.Check />} onClick={createExercises} disabled={busy}>
-                Creer les exercices
+                Créer les exercices
               </ElevateButton>
               <ElevateButton
                 variant="ghost"
@@ -588,7 +588,7 @@ export default function TeacherPhotoExamsPage() {
               return (
                 <div key={category} className="rounded-lg border border-gray-light bg-off-white px-3 py-2.5">
                   <div className="font-sans text-sm font-semibold text-text-dark">{mistakeCategoryLabel[category]}</div>
-                  <div className="font-sans text-xs text-text-light">{count} element(s) detecte(s)</div>
+                  <div className="font-sans text-xs text-text-light">{count} élément(s) détecté(s)</div>
                 </div>
               )
             })}
@@ -602,7 +602,7 @@ export default function TeacherPhotoExamsPage() {
                   <div key={page.fileName} className="rounded-lg border border-gray-light bg-card px-3 py-2">
                     <div className="font-sans text-xs font-semibold text-text-dark truncate">{page.fileName}</div>
                     <div className="font-sans text-[11px] text-text-light">
-                      Source retenue: {page.selectedSource === "enhanced" ? "optimisee" : "originale"} &middot; confiance {Math.round(page.confidence)}%
+                      Source retenue: {page.selectedSource === "enhanced" ? "optimisée" : "originale"} &middot; confiance {Math.round(page.confidence)}%
                     </div>
                   </div>
                 ))}
@@ -613,9 +613,9 @@ export default function TeacherPhotoExamsPage() {
           <div className="rounded-xl border border-gray-light bg-off-white p-4">
             <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
               <div>
-                <div className="font-sans text-[13px] font-semibold text-navy">Texte OCR a verifier</div>
+                <div className="font-sans text-[13px] font-semibold text-navy">Texte OCR à vérifier</div>
                 <div className="font-sans text-[11px] text-text-light">
-                  Corrigez le texte si besoin puis recalculer pour ameliorer les exercices.
+                  Corrigez le texte si besoin puis recalculez pour améliorer les exercices.
                 </div>
               </div>
               <ElevateButton variant="outline" size="sm" onClick={recomputeFromDraftText} disabled={busy || !ocrDraftText.trim()}>
@@ -630,7 +630,7 @@ export default function TeacherPhotoExamsPage() {
             />
             {draftOutOfSync && (
               <div className="font-sans text-xs text-abricot-dark mt-2">
-                Le texte a ete modifie. Cliquez sur "Recalculer depuis le texte" avant de creer les exercices.
+                Le texte a été modifié. Cliquez sur "Recalculer depuis le texte" avant de créer les exercices.
               </div>
             )}
           </div>

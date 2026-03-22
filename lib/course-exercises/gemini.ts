@@ -5,22 +5,22 @@ import {
   type CourseExerciseQuestionContent,
 } from "./schema"
 
-const SYSTEM_INSTRUCTION = `Tu es un enseignant d'anglais pour etudiants francophones.
-Tu crees des exercices bases sur des documents de cours deja vus en classe.
+const SYSTEM_INSTRUCTION = `Tu es un enseignant d'anglais pour étudiants francophones.
+Tu crées des exercices basés sur des documents de cours déjà vus en classe.
 
 Contraintes obligatoires:
-- Les consignes doivent etre en francais.
-- Chaque exercice doit inclure un melange de questions repondables tout de suite.
+- Les consignes doivent être en français.
+- Chaque exercice doit inclure un mélange de questions répondables tout de suite.
 - Chaque exercice doit contenir 4 questions:
-  - 2 questions "single_choice" (QCM a choix unique)
-  - 2 questions "short_answer" (reponse courte redigee par l'eleve)
+  - 2 questions "single_choice" (QCM à choix unique)
+  - 2 questions "short_answer" (réponse courte rédigée par l'élève)
 - Chaque question "single_choice" doit fournir 3 ou 4 options plausibles.
-- Chaque question doit inclure un champ "hint" en francais (1 phrase) qui aide sans donner la reponse exacte.
-- N'ecris pas de correction ni de "bonne reponse" dans la sortie.
-- Le contenu anglais doit rester simple, utile et coherent avec le sujet du document.
-- Le niveau CECRL doit etre respecte strictement.
-- Les exercices doivent porter uniquement sur ce qui est present dans le document.
-- Evite les questions hors-sujet, trop abstraites ou qui demandent des connaissances externes.
+- Chaque question doit inclure un champ "hint" en français (1 phrase) qui aide sans donner la réponse exacte.
+- N'écris pas de correction ni de "bonne réponse" dans la sortie.
+- Le contenu anglais doit rester simple, utile et cohérent avec le sujet du document.
+- Le niveau CECRL doit être respecté strictement.
+- Les exercices doivent porter uniquement sur ce qui est présent dans le document.
+- Évite les questions hors-sujet, trop abstraites ou qui demandent des connaissances externes.
 
 Format de sortie JSON uniquement:
 {
@@ -48,7 +48,7 @@ Format de sortie JSON uniquement:
   ]
 }
 
-Genere entre 4 et 6 exercices.`
+Génère entre 4 et 6 exercices.`
 
 type NormalizedQuestion = {
   id: string
@@ -98,57 +98,57 @@ function referencesQuestionsWithoutDetails(instructions: string) {
 function fallbackQuestionsForType(exerciseType: CourseExerciseContent["exercise_type"]) {
   if (exerciseType === "reading") {
     return [
-      "Quelle est l'idee principale du document ?",
-      "Citez deux informations precises du document pour justifier votre reponse.",
-      "Expliquez en 3 a 4 phrases ce que vous retenez de ce document.",
+      "Quelle est l'idée principale du document ?",
+      "Citez deux informations précises du document pour justifier votre réponse.",
+      "Expliquez en 3 à 4 phrases ce que vous retenez de ce document.",
     ]
   }
 
   if (exerciseType === "vocabulary") {
     return [
-      "Relevez 5 mots ou expressions importants du document et donnez leur sens en francais.",
-      "Ecrivez une phrase en anglais pour chaque mot ou expression releve(e).",
-      "Choisissez 2 mots et expliquez le contexte dans lequel ils sont utilises dans le document.",
+      "Relevez 5 mots ou expressions importants du document et donnez leur sens en français.",
+      "Écrivez une phrase en anglais pour chaque mot ou expression relevé(e).",
+      "Choisissez 2 mots et expliquez le contexte dans lequel ils sont utilisés dans le document.",
     ]
   }
 
   if (exerciseType === "grammar") {
     return [
-      "Identifiez 4 phrases du document qui illustrent le point de grammaire travaille en classe.",
-      "Reecrivez ces phrases en modifiant le temps ou la structure grammaticale.",
-      "Expliquez brievement en francais la regle appliquee pour chaque transformation.",
+      "Identifiez 4 phrases du document qui illustrent le point de grammaire travaillé en classe.",
+      "Réécrivez ces phrases en modifiant le temps ou la structure grammaticale.",
+      "Expliquez brièvement en français la règle appliquée pour chaque transformation.",
     ]
   }
 
   if (exerciseType === "conjugation") {
     return [
-      "Identifiez 4 verbes du document et precisez leur temps.",
-      "Reecrivez 4 phrases en changeant le temps verbal (present, preterit, present perfect selon le contexte).",
-      "Expliquez brievement en francais la raison de chaque choix de temps.",
+      "Identifiez 4 verbes du document et précisez leur temps.",
+      "Réécrivez 4 phrases en changeant le temps verbal (présent, prétérit, present perfect selon le contexte).",
+      "Expliquez brièvement en français la raison de chaque choix de temps.",
     ]
   }
 
   return [
-    "Resumez le document en 4 a 5 phrases claires.",
-    "Relevez 4 mots importants et reutilisez-les dans de nouvelles phrases en anglais.",
-    "Faites 2 transformations grammaticales correctes a partir d'exemples du document.",
+    "Résumez le document en 4 à 5 phrases claires.",
+    "Relevez 4 mots importants et réutilisez-les dans de nouvelles phrases en anglais.",
+    "Faites 2 transformations grammaticales correctes à partir d'exemples du document.",
   ]
 }
 
 function defaultInstructionsForType(exerciseType: CourseExerciseContent["exercise_type"]) {
   if (exerciseType === "reading") {
-    return "Lisez le document puis repondez aux questions de comprehension ci-dessous."
+    return "Lisez le document puis répondez aux questions de compréhension ci-dessous."
   }
   if (exerciseType === "vocabulary") {
-    return "Travaillez le vocabulaire du document puis repondez aux questions ci-dessous."
+    return "Travaillez le vocabulaire du document puis répondez aux questions ci-dessous."
   }
   if (exerciseType === "grammar") {
-    return "Appliquez les regles de grammaire vues en cours en repondant aux questions ci-dessous."
+    return "Appliquez les règles de grammaire vues en cours en répondant aux questions ci-dessous."
   }
   if (exerciseType === "conjugation") {
-    return "Travaillez la conjugaison vue en cours en repondant aux questions ci-dessous."
+    return "Travaillez la conjugaison vue en cours en répondant aux questions ci-dessous."
   }
-  return "Repondez aux questions ci-dessous en vous appuyant sur le document de cours."
+  return "Répondez aux questions ci-dessous en vous appuyant sur le document de cours."
 }
 
 function ensureActionableInstructionText(exercise: CourseExerciseContent) {
@@ -159,7 +159,7 @@ function ensureActionableInstructionText(exercise: CourseExerciseContent) {
     return instructions
   }
 
-  return `${instructions}\n\nRepondez directement aux questions ci-dessous.`
+  return `${instructions}\n\nRépondez directement aux questions ci-dessous.`
 }
 
 function buildFallbackStructuredQuestions(exerciseType: CourseExerciseContent["exercise_type"]): NormalizedQuestion[] {
@@ -167,32 +167,32 @@ function buildFallbackStructuredQuestions(exerciseType: CourseExerciseContent["e
     return [
       {
         id: "q1",
-        prompt: "Quelle proposition resume le mieux l'idee principale du document ?",
+        prompt: "Quelle proposition résume le mieux l'idée principale du document ?",
         question_type: "single_choice",
         options: [
-          "Le document presente le theme central du cours.",
+          "Le document présente le thème central du cours.",
           "Le document raconte une histoire sans rapport avec le cours.",
-          "Le document parle d'un sujet non etudie en classe.",
+          "Le document parle d'un sujet non étudié en classe.",
         ],
       },
       {
         id: "q2",
-        prompt: "Explique en 2 a 3 phrases ce que tu as compris du document.",
+        prompt: "Explique en 2 à 3 phrases ce que tu as compris du document.",
         question_type: "short_answer",
       },
       {
         id: "q3",
-        prompt: "Quelle information est bien presente dans le document ?",
+        prompt: "Quelle information est bien présente dans le document ?",
         question_type: "single_choice",
         options: [
-          "Une information precise vue pendant le cours.",
-          "Une regle qui n'apparait pas dans le document.",
-          "Un exemple totalement invente et hors contexte.",
+          "Une information précise vue pendant le cours.",
+          "Une règle qui n'apparaît pas dans le document.",
+          "Un exemple totalement inventé et hors contexte.",
         ],
       },
       {
         id: "q4",
-        prompt: "Cite un detail du document et explique pourquoi il est important.",
+        prompt: "Cite un détail du document et explique pourquoi il est important.",
         question_type: "short_answer",
       },
     ]
@@ -202,17 +202,17 @@ function buildFallbackStructuredQuestions(exerciseType: CourseExerciseContent["e
     return [
       {
         id: "q1",
-        prompt: "Quel item correspond a un mot-cle de vocabulaire du document ?",
+        prompt: "Quel item correspond à un mot-clé de vocabulaire du document ?",
         question_type: "single_choice",
         options: [
           "Un terme qui revient dans le texte de cours.",
-          "Un mot sans lien avec le theme etudie.",
+          "Un mot sans lien avec le thème étudié.",
           "Une expression absente du document.",
         ],
       },
       {
         id: "q2",
-        prompt: "Choisis un mot important du document et donne sa signification en francais.",
+        prompt: "Choisis un mot important du document et donne sa signification en français.",
         question_type: "short_answer",
       },
       {
@@ -221,13 +221,13 @@ function buildFallbackStructuredQuestions(exerciseType: CourseExerciseContent["e
         question_type: "single_choice",
         options: [
           "Une phrase qui respecte le sens du mot dans le document.",
-          "Une phrase qui change completement le sens du mot.",
+          "Une phrase qui change complètement le sens du mot.",
           "Une phrase qui n'utilise pas le mot cible.",
         ],
       },
       {
         id: "q4",
-        prompt: "Ecris une phrase simple en anglais avec un mot du document.",
+        prompt: "Écris une phrase simple en anglais avec un mot du document.",
         question_type: "short_answer",
       },
     ]
@@ -237,32 +237,32 @@ function buildFallbackStructuredQuestions(exerciseType: CourseExerciseContent["e
     return [
       {
         id: "q1",
-        prompt: "Quel choix respecte la regle de grammaire etudiee dans le document ?",
+        prompt: "Quel choix respecte la règle de grammaire étudiée dans le document ?",
         question_type: "single_choice",
         options: [
-          "La phrase applique correctement la structure etudiee.",
-          "La phrase melange des temps sans logique.",
+          "La phrase applique correctement la structure étudiée.",
+          "La phrase mélange des temps sans logique.",
           "La phrase utilise une structure absente du cours.",
         ],
       },
       {
         id: "q2",
-        prompt: "Reecris une phrase du document en appliquant la regle de grammaire ciblee.",
+        prompt: "Réécris une phrase du document en appliquant la règle de grammaire ciblée.",
         question_type: "short_answer",
       },
       {
         id: "q3",
-        prompt: "Quel exemple correspond le mieux au point de grammaire travaille ?",
+        prompt: "Quel exemple correspond le mieux au point de grammaire travaillé ?",
         question_type: "single_choice",
         options: [
-          "Un exemple conforme a la regle vue en classe.",
+          "Un exemple conforme à la règle vue en classe.",
           "Un exemple qui ignore le point de grammaire.",
-          "Un exemple qui introduit une regle non etudiee.",
+          "Un exemple qui introduit une règle non étudiée.",
         ],
       },
       {
         id: "q4",
-        prompt: "Explique brievement la regle appliquee dans ta transformation.",
+        prompt: "Explique brièvement la règle appliquée dans ta transformation.",
         question_type: "short_answer",
       },
     ]
@@ -276,13 +276,13 @@ function buildFallbackStructuredQuestions(exerciseType: CourseExerciseContent["e
         question_type: "single_choice",
         options: [
           "La phrase utilise le bon temps selon le contexte.",
-          "La phrase melange les temps sans logique.",
-          "La phrase ignore completement le repere temporel.",
+          "La phrase mélange les temps sans logique.",
+          "La phrase ignore complètement le repère temporel.",
         ],
       },
       {
         id: "q2",
-        prompt: "Conjugue le verbe principal d'une phrase du document dans un autre temps adapte.",
+        prompt: "Conjugue le verbe principal d'une phrase du document dans un autre temps adapté.",
         question_type: "short_answer",
       },
       {
@@ -292,12 +292,12 @@ function buildFallbackStructuredQuestions(exerciseType: CourseExerciseContent["e
         options: [
           "La forme verbale est correcte pour le sujet et le temps.",
           "La forme verbale est incorrecte pour le sujet.",
-          "La forme verbale ne correspond pas au temps demande.",
+          "La forme verbale ne correspond pas au temps demandé.",
         ],
       },
       {
         id: "q4",
-        prompt: "Explique en francais pourquoi tu as choisi ce temps verbal.",
+        prompt: "Explique en français pourquoi tu as choisi ce temps verbal.",
         question_type: "short_answer",
       },
     ]
@@ -306,7 +306,7 @@ function buildFallbackStructuredQuestions(exerciseType: CourseExerciseContent["e
   return [
     {
       id: "q1",
-      prompt: "Quelle proposition est la plus fidele au document de cours ?",
+      prompt: "Quelle proposition est la plus fidèle au document de cours ?",
       question_type: "single_choice",
       options: [
         "Une proposition en lien direct avec le contenu vu en classe.",
@@ -316,22 +316,22 @@ function buildFallbackStructuredQuestions(exerciseType: CourseExerciseContent["e
     },
     {
       id: "q2",
-      prompt: "Resume en 2 a 3 phrases ce que tu retiens du document.",
+      prompt: "Résume en 2 à 3 phrases ce que tu retiens du document.",
       question_type: "short_answer",
     },
     {
       id: "q3",
-      prompt: "Quel choix utilise correctement un element linguistique du document ?",
+      prompt: "Quel choix utilise correctement un élément linguistique du document ?",
       question_type: "single_choice",
       options: [
-        "Le choix reutilise correctement un element du document.",
-        "Le choix deforme l'element du document.",
-        "Le choix ne contient aucun element du document.",
+        "Le choix réutilise correctement un élément du document.",
+        "Le choix déforme l'élément du document.",
+        "Le choix ne contient aucun élément du document.",
       ],
     },
     {
       id: "q4",
-      prompt: "Donne un exemple personnel en anglais qui reprend une idee du document.",
+      prompt: "Donne un exemple personnel en anglais qui reprend une idée du document.",
       question_type: "short_answer",
     },
   ]
@@ -378,38 +378,38 @@ function fallbackHintForQuestion(
   const normalizedPrompt = normalizeHintText(prompt)
 
   if (/pronom relatif|clause relative|relative/.test(normalizedPrompt)) {
-    return "Rappel: who = personne, which = chose. Verifie le mot remplace et le verbe qui suit."
+    return "Rappel: who = personne, which = chose. Vérifie le mot remplacé et le verbe qui suit."
   }
 
   if (/modal|modaux|possibilit|can|could|may|might/.test(normalizedPrompt)) {
-    return "Repere le sens attendu: capacite, possibilite ou permission, puis choisis le modal adapte."
+    return "Repère le sens attendu: capacité, possibilité ou permission, puis choisis le modal adapté."
   }
 
   if (/combinez|combine|reecri|reformule|transform/.test(normalizedPrompt)) {
-    return "Conserve les deux idees de depart, puis relie-les avec une structure grammaticale correcte."
+    return "Conserve les deux idées de départ, puis relie-les avec une structure grammaticale correcte."
   }
 
   if (/temps verbal|conjug|preterit|present perfect|past|future/.test(normalizedPrompt) || exerciseType === "conjugation") {
-    return "Trouve d'abord le repere de temps, puis accorde le verbe avec le sujet."
+    return "Trouve d'abord le repère de temps, puis accorde le verbe avec le sujet."
   }
 
   if (exerciseType === "grammar") {
-    return "Relis la structure complete (sujet, verbe, complement) et verifie la regle ciblee."
+    return "Relis la structure complète (sujet, verbe, complément) et vérifie la règle ciblée."
   }
 
   if (exerciseType === "vocabulary") {
-    return "Choisis le mot qui colle au contexte, pas seulement a une traduction litterale."
+    return "Choisis le mot qui colle au contexte, pas seulement à une traduction littérale."
   }
 
   if (exerciseType === "reading") {
-    return "Reviens au document et appuie-toi sur un detail precis pour confirmer ta reponse."
+    return "Reviens au document et appuie-toi sur un détail précis pour confirmer ta réponse."
   }
 
   if (questionType === "single_choice") {
     return "Lis toutes les options puis elimine d'abord celles qui ne respectent pas la consigne."
   }
 
-  return "Ecris une reponse courte, claire et complete en anglais, avec au moins un mot du cours."
+  return "Écris une réponse courte, claire et complète en anglais, avec au moins un mot du cours."
 }
 
 function toNormalizedQuestion(
@@ -523,16 +523,16 @@ function buildPrompt(input: GenerateCourseExercisesInput): string {
     `Niveau CECRL cible: ${input.cefrLevel.toUpperCase()}`,
     `Nom du document: ${input.documentName}`,
     "",
-    "Tache:",
-    "- Produis des exercices que les eleves peuvent realiser en ligne.",
+    "Tâche:",
+    "- Produis des exercices que les élèves peuvent réaliser en ligne.",
     "- Donne des consignes claires et actionnables.",
-    "- Dans chaque exercice, genere 4 questions melangees: 2 single_choice + 2 short_answer.",
+    "- Dans chaque exercice, génère 4 questions mélangées: 2 single_choice + 2 short_answer.",
     "- Pour chaque question single_choice, fournis 3 ou 4 options.",
-    "- Pour chaque question, ajoute un champ hint en francais (1 phrase) sans donner la reponse.",
-    "- Equilibre comprehension, vocabulaire et grammaire selon le document.",
-    "- Si le document est lexical, privilegie vocabulaire + reutilisation en phrase.",
-    "- Si le document est sur la conjugaison, privilegie les temps verbaux et les transformations de phrases.",
-    "- Si le document est grammatical, privilegie transformation/reformulation.",
+    "- Pour chaque question, ajoute un champ hint en français (1 phrase) sans donner la réponse.",
+    "- Équilibre compréhension, vocabulaire et grammaire selon le document.",
+    "- Si le document est lexical, privilégie vocabulaire + réutilisation en phrase.",
+    "- Si le document est sur la conjugaison, privilégie les temps verbaux et les transformations de phrases.",
+    "- Si le document est grammatical, privilégie transformation/reformulation.",
     "",
     "Retourne uniquement du JSON valide, sans markdown.",
   ].join("\n")

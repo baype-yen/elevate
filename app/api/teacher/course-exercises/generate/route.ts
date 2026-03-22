@@ -222,7 +222,7 @@ export async function POST(request: Request) {
         createdFreshTargets: 0,
         skippedExisting: skippedCompletedOnly,
         studentsTargeted: dedupedTargets.length,
-        message: "Aucun exercice non termine a regenerer.",
+        message: "Aucun exercice non terminé à régénérer.",
       })
     }
 
@@ -335,8 +335,8 @@ export async function POST(request: Request) {
     event_type: "assignment_created",
     payload: {
       text: forceRegenerate
-        ? `Exercices IA regeneres depuis ${document.name || "un document"} (${topicLabel}).`
-        : `Exercices IA crees depuis ${document.name || "un document"} (${topicLabel}).`,
+        ? `Exercices IA régénérés depuis ${document.name || "un document"} (${topicLabel}).`
+        : `Exercices IA créés depuis ${document.name || "un document"} (${topicLabel}).`,
     },
     created_at: FieldValue.serverTimestamp(),
   })

@@ -113,7 +113,7 @@ export default function TeacherDashboard() {
   const onCreateClass = async () => {
     if (!context) return
     if (!context.activeSchoolId) {
-      setNewClassError("Aucun etablissement actif selectionne.")
+      setNewClassError("Aucun établissement actif sélectionné.")
       return
     }
 
@@ -128,7 +128,7 @@ export default function TeacherDashboard() {
       await load()
       router.push(`/teacher/classes/${classId}`)
     } catch (e: any) {
-      setNewClassError(e.message || "Impossible de creer la classe.")
+      setNewClassError(e.message || "Impossible de créer la classe.")
     } finally {
       setNewClassLoading(false)
     }
@@ -141,19 +141,19 @@ export default function TeacherDashboard() {
   return (
     <div className="flex flex-col gap-6">
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-3">
-        <StatCard icon={<Icons.Users />} label="Eleves actifs" value={String(data.summary.totalStudents)} accentBg="bg-navy/10" accentText="text-navy" />
+        <StatCard icon={<Icons.Users />} label="Élèves actifs" value={String(data.summary.totalStudents)} accentBg="bg-navy/10" accentText="text-navy" />
         <StatCard icon={<Icons.Book />} label="Classes actives" value={String(data.summary.activeClasses)} accentBg="bg-violet/10" accentText="text-violet" />
         <StatCard icon={<Icons.Clipboard />} label="Corrections attente" value={String(data.summary.pendingReviews)} accentBg="bg-watermelon/10" accentText="text-watermelon" />
         <StatCard icon={<Icons.BarChart />} label="Moyenne globale" value={`${data.summary.overallAvg}%`} accentBg="bg-abricot/10" accentText="text-abricot-dark" />
-        <StatCard icon={<Icons.Check />} label="Docs IA prets" value={String(data.summary.documentsReady)} accentBg="bg-navy-light/10" accentText="text-navy" />
-        <StatCard icon={<Icons.Bell />} label="Docs a configurer" value={String(data.summary.documentsBlocked)} accentBg="bg-watermelon/10" accentText="text-watermelon" />
+        <StatCard icon={<Icons.Check />} label="Docs IA prêts" value={String(data.summary.documentsReady)} accentBg="bg-navy-light/10" accentText="text-navy" />
+        <StatCard icon={<Icons.Bell />} label="Docs à configurer" value={String(data.summary.documentsBlocked)} accentBg="bg-watermelon/10" accentText="text-watermelon" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[1.25fr_1fr] gap-4">
         <div className="bg-card rounded-2xl border border-gray-mid p-5">
-          <h4 className="font-serif text-lg font-bold text-navy mb-1">Pilotage operationnel</h4>
+          <h4 className="font-serif text-lg font-bold text-navy mb-1">Pilotage opérationnel</h4>
           <p className="font-sans text-[13px] text-text-mid mb-4">
-            Suivi de la chaine complete: documents, generation IA, corrections et remediations.
+            Suivi de la chaîne complète: documents, génération IA, corrections et remédiations.
           </p>
 
           <div className="grid grid-cols-2 lg:grid-cols-5 gap-2.5 mb-4">
@@ -162,11 +162,11 @@ export default function TeacherDashboard() {
               <div className="font-serif text-xl font-bold text-navy mt-0.5">{data.aiImpact.courseExercises}</div>
             </div>
             <div className="rounded-lg border border-gray-light bg-off-white px-3 py-2.5">
-              <div className="font-sans text-[11px] text-text-light">Regenerations IA</div>
+               <div className="font-sans text-[11px] text-text-light">Régénérations IA</div>
               <div className="font-serif text-xl font-bold text-navy mt-0.5">{data.aiImpact.courseRegenerations}</div>
             </div>
             <div className="rounded-lg border border-gray-light bg-off-white px-3 py-2.5">
-              <div className="font-sans text-[11px] text-text-light">Remediation</div>
+               <div className="font-sans text-[11px] text-text-light">Remédiation</div>
               <div className="font-serif text-xl font-bold text-navy mt-0.5">{data.aiImpact.personalizedExercises}</div>
             </div>
             <div className="rounded-lg border border-gray-light bg-off-white px-3 py-2.5">
@@ -181,9 +181,9 @@ export default function TeacherDashboard() {
 
           <div className="flex flex-wrap gap-2">
             <ElevateButton size="sm" variant="outline" icon={<Icons.FileText />} onClick={() => router.push("/teacher/documents")}>Documents</ElevateButton>
-            <ElevateButton size="sm" variant="outline" icon={<Icons.Clipboard />} onClick={() => router.push("/teacher/work")}>Travaux eleves</ElevateButton>
+            <ElevateButton size="sm" variant="outline" icon={<Icons.Clipboard />} onClick={() => router.push("/teacher/work")}>Travaux élèves</ElevateButton>
             <ElevateButton size="sm" variant="outline" icon={<Icons.Camera />} onClick={() => router.push("/teacher/photo-exams")}>Copies photo</ElevateButton>
-            <ElevateButton size="sm" variant="ghost" icon={<Icons.Zap />} onClick={() => router.push("/teacher/activity")}>Activite</ElevateButton>
+            <ElevateButton size="sm" variant="ghost" icon={<Icons.Zap />} onClick={() => router.push("/teacher/activity")}>Activité</ElevateButton>
           </div>
         </div>
 
@@ -191,8 +191,8 @@ export default function TeacherDashboard() {
           <div className="flex items-center justify-between gap-3 mb-4">
             <div>
               <h4 className="font-serif text-lg font-bold text-navy">File prioritaire</h4>
-              <p className="font-sans text-[13px] text-text-mid">Actions a traiter en premier.</p>
-            </div>
+               <p className="font-sans text-[13px] text-text-mid">Actions à traiter en premier.</p>
+             </div>
             {!!data.priorityQueue.length && (
               <span className="rounded-md border border-gray-mid bg-off-white px-2.5 py-1 font-sans text-[11px] font-semibold text-text-mid">
                 {data.priorityQueue.length} item(s)
@@ -208,7 +208,7 @@ export default function TeacherDashboard() {
                     <div className="font-sans text-[13px] font-semibold text-text-dark leading-snug">{item.title}</div>
                     <div className="font-sans text-[12px] text-text-mid mt-1">{item.detail}</div>
                     <span className={cn("inline-flex mt-2 rounded-md border px-2 py-0.5 font-sans text-[10px] font-semibold", priorityClass(item.priority))}>
-                      Priorite {priorityLabel(item.priority)}
+                      Priorité {priorityLabel(item.priority)}
                     </span>
                   </div>
 
@@ -220,14 +220,14 @@ export default function TeacherDashboard() {
             ))}
 
             {!data.priorityQueue.length && (
-              <div className="font-sans text-sm text-text-mid">Aucune urgence detectee pour le moment.</div>
+              <div className="font-sans text-sm text-text-mid">Aucune urgence détectée pour le moment.</div>
             )}
           </div>
         </div>
       </div>
 
       <div>
-        <h4 className="font-serif text-lg font-bold text-navy mb-3.5">Sante des classes</h4>
+        <h4 className="font-serif text-lg font-bold text-navy mb-3.5">Santé des classes</h4>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
           {data.classHealth.map((classRow) => (
             <div key={classRow.id} className="bg-card rounded-2xl border border-gray-mid p-5 flex flex-col gap-3">
@@ -235,7 +235,7 @@ export default function TeacherDashboard() {
                 <div>
                   <div className="font-serif text-[16px] font-bold text-navy">{classRow.name}</div>
                   <div className="font-sans text-xs text-text-light">
-                    {classRow.students} eleves · {classRow.assignments} devoir(s)
+                    {classRow.students} élèves · {classRow.assignments} devoir(s)
                   </div>
                 </div>
                 <LevelBadge level={classRow.level} colorClass={colorLevel[classRow.level] || "violet"} active />
@@ -275,7 +275,7 @@ export default function TeacherDashboard() {
 
       <div className="grid grid-cols-1 lg:grid-cols-[1.25fr_1fr] gap-4">
         <div className="bg-card rounded-2xl border border-gray-mid p-5">
-          <h4 className="font-serif text-lg font-bold text-navy mb-1">Activite recente</h4>
+          <h4 className="font-serif text-lg font-bold text-navy mb-1">Activité récente</h4>
           <p className="font-sans text-[13px] text-text-mid mb-4">Signal utile sur ce qui se passe dans les classes.</p>
 
           <div className="flex flex-col gap-2.5">
@@ -287,7 +287,7 @@ export default function TeacherDashboard() {
             ))}
 
             {!data.recentActivity.length && (
-              <div className="font-sans text-sm text-text-mid">Aucune activite recente.</div>
+              <div className="font-sans text-sm text-text-mid">Aucune activité récente.</div>
             )}
           </div>
         </div>
@@ -296,9 +296,9 @@ export default function TeacherDashboard() {
           <div className="w-12 h-12 rounded-xl bg-gray-light flex items-center justify-center text-navy">
             <Icons.Plus />
           </div>
-          <h4 className="font-serif text-base font-bold text-navy">Creer une nouvelle classe</h4>
+          <h4 className="font-serif text-base font-bold text-navy">Créer une nouvelle classe</h4>
           <p className="font-sans text-[13px] text-text-mid">
-            Lance rapidement une classe puis complete le setup depuis l'espace Classes.
+            Lance rapidement une classe puis complète le setup depuis l'espace Classes.
           </p>
 
           <InputField
@@ -323,7 +323,7 @@ export default function TeacherDashboard() {
           />
 
           <ElevateButton variant="primary" fullWidth icon={<Icons.Plus />} onClick={onCreateClass} disabled={newClassLoading}>
-            Creer la classe
+            Créer la classe
           </ElevateButton>
 
           {newClassError && <p className="font-sans text-sm text-watermelon">{newClassError}</p>}

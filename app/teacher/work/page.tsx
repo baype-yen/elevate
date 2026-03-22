@@ -61,7 +61,7 @@ const FEEDBACK_SECTION_FIELDS: Array<{
     key: "improvements",
     label: "À améliorer",
     placeholder: "Les points à retravailler...",
-    headings: ["À améliorer", "A ameliorer"],
+    headings: ["À améliorer"],
   },
   {
     key: "advice",
@@ -98,8 +98,21 @@ function parseFeedbackSections(feedback: string): FeedbackSections {
 
     for (const section of FEEDBACK_SECTION_FIELDS) {
       for (const heading of section.headings) {
-        const escapedLabel = heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-        const headingMatch = line.match(new RegExp(`^${escapedLabel}\\s*:?\\s*(.*)$`, "i"))
+        const variants = [
+          heading,
+          heading.normalize("NFD").replace(/[\u0300-\u036f]/g, ""),
+        ]
+
+        let headingMatch: RegExpMatchArray | null = null
+        for (const variant of variants) {
+          const escapedLabel = variant.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+          const matched = line.match(new RegExp(`^${escapedLabel}\\s*:?\\s*(.*)$`, "i"))
+          if (matched) {
+            headingMatch = matched
+            break
+          }
+        }
+
         if (!headingMatch) continue
 
         matchedSection = section.key

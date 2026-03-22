@@ -195,7 +195,7 @@ export default function FlashcardsPage() {
 
   const submitCurrentAnswer = async () => {
     if (!currentCard || !selectedOption) {
-      setError("Choisissez une reponse avant de valider.")
+      setError("Choisissez une réponse avant de valider.")
       return
     }
 
@@ -214,7 +214,7 @@ export default function FlashcardsPage() {
 
       const payload = await response.json()
       if (!response.ok) {
-        throw new Error(payload?.error || "Impossible de corriger la reponse.")
+        throw new Error(payload?.error || "Impossible de corriger la réponse.")
       }
 
       const data = payload as AnswerResponse
@@ -248,7 +248,7 @@ export default function FlashcardsPage() {
             </p>
           </div>
           <ElevateButton variant="outline" size="sm" onClick={loadSession} disabled={loadingDeck || busy}>
-            Regenerer le deck
+            Régénérer le deck
           </ElevateButton>
         </div>
 
@@ -258,7 +258,7 @@ export default function FlashcardsPage() {
               <div className="font-sans text-[12px] text-text-light">{item.label}</div>
               <div className="mt-1 flex items-center justify-between">
                 <span className="font-sans text-sm font-bold text-navy">{progress.levels[item.key]}</span>
-                <span className="font-sans text-xs text-text-mid">Serie: {progress.streaks[item.key]}</span>
+                <span className="font-sans text-xs text-text-mid">Série: {progress.streaks[item.key]}</span>
               </div>
             </div>
           ))}
@@ -273,9 +273,9 @@ export default function FlashcardsPage() {
         <div className="bg-card rounded-[20px] border border-gray-mid p-7 text-center">
           <Icons.Layers className="mx-auto mb-3 text-text-light" />
           <div className="font-sans text-sm text-text-mid mb-3">
-            Le deck est vide pour le moment. Clique sur "Regenerer le deck" pour creer de nouvelles questions.
+            Le deck est vide pour le moment. Clique sur "Régénérer le deck" pour créer de nouvelles questions.
           </div>
-          <ElevateButton variant="primary" onClick={loadSession} disabled={busy}>Creer mon deck</ElevateButton>
+          <ElevateButton variant="primary" onClick={loadSession} disabled={busy}>Créer mon deck</ElevateButton>
         </div>
       ) : (
         <div className="bg-card rounded-[20px] border border-gray-mid p-6 flex flex-col gap-4">
@@ -307,10 +307,10 @@ export default function FlashcardsPage() {
 
             <div className="mt-4 flex items-center gap-2">
               <ElevateButton variant="primary" onClick={submitCurrentAnswer} disabled={busy || !selectedOption}>
-                {busy ? "Validation..." : "Valider ma reponse"}
+                {busy ? "Validation..." : "Valider ma réponse"}
               </ElevateButton>
               <ElevateButton variant="ghost" onClick={() => setSelectedOption("")} disabled={busy || !selectedOption}>
-                Reinitialiser
+                Réinitialiser
               </ElevateButton>
             </div>
           </div>
@@ -323,10 +323,10 @@ export default function FlashcardsPage() {
                 : "border-abricot/30 bg-abricot/10",
             )}>
               <div className={cn("font-sans text-sm font-semibold mb-1", result.correct ? "text-violet" : "text-abricot-dark")}>
-                {result.correct ? "Bonne reponse ! Niveau augmente." : "Pas encore. On renforce ce point avec de nouvelles cartes."}
+                {result.correct ? "Bonne réponse ! Niveau augmenté." : "Pas encore. On renforce ce point avec de nouvelles cartes."}
               </div>
               <div className="font-sans text-sm text-text-dark mb-1">
-                Reponse correcte: <span className="font-semibold">{result.correctAnswer}</span>
+                Réponse correcte: <span className="font-semibold">{result.correctAnswer}</span>
               </div>
               <div className="font-sans text-sm text-text-mid leading-relaxed">{result.explanation}</div>
               <div className="font-sans text-xs text-text-light mt-2">

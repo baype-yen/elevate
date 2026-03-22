@@ -205,7 +205,7 @@ export default function StudentsPage() {
     const counters = new Map<string, number>()
 
     return rosterCandidates.map((student, index) => {
-      const firstToken = sanitizeToken(student.firstName) || "eleve"
+      const firstToken = sanitizeToken(student.firstName) || "student"
       const lastToken = sanitizeToken(student.lastName) || "classe"
       const baseLocal = `${firstToken}.${lastToken}`
       const seen = (counters.get(baseLocal) || 0) + 1

@@ -460,7 +460,7 @@ export async function fetchTeacherDashboardData(db: Firestore, userId: string, s
     : flashcards.length
 
   const recentActivity = activityEvents.slice(0, 8).map((event: any) => ({
-    text: event.payload?.text || `Evenement: ${(event.event_type || "").replaceAll("_", " ")}`,
+    text: event.payload?.text || `Événement: ${(event.event_type || "").replaceAll("_", " ")}`,
     time: toDate(event.created_at)?.toLocaleString("fr-FR") || "-",
     type: event.event_type || "event",
   }))
@@ -477,7 +477,7 @@ export async function fetchTeacherDashboardData(db: Firestore, userId: string, s
     const assignment = assignmentById.get(submission.assignment_id)
     const classId = assignment?.class_id || null
     const className = classId ? classNameById.get(classId) || "Classe" : "Classe"
-    const studentName = profileById.get(submission.student_id)?.full_name || "Eleve"
+    const studentName = profileById.get(submission.student_id)?.full_name || "Élève"
     const submittedAt = toDate(submission.submitted_at)
     const ageHours = submittedAt ? (Date.now() - submittedAt.getTime()) / (1000 * 60 * 60) : 0
 
@@ -496,10 +496,10 @@ export async function fetchTeacherDashboardData(db: Firestore, userId: string, s
 
     priorityQueue.push({
       id: `document:${documentRow.id}`,
-      title: `Document a completer - ${documentRow.name || "Document"}`,
+      title: `Document à compléter - ${documentRow.name || "Document"}`,
       detail: hasSourceText
-        ? "Classes cibles manquantes pour la generation IA"
-        : "Texte source manquant pour la generation IA",
+        ? "Classes cibles manquantes pour la génération IA"
+        : "Texte source manquant pour la génération IA",
       href: "/teacher/documents",
       priority: hasSourceText ? "medium" : "high",
     })
@@ -509,7 +509,7 @@ export async function fetchTeacherDashboardData(db: Firestore, userId: string, s
   if (fragileClass) {
     priorityQueue.push({
       id: `class:${fragileClass.id}`,
-      title: `Classe a relancer - ${fragileClass.name}`,
+      title: `Classe à relancer - ${fragileClass.name}`,
       detail: `Taux de remise ${fragileClass.submissionRate}% · ${fragileClass.pending} correction(s) en attente`,
       href: `/teacher/classes/${fragileClass.id}`,
       priority: "medium",
@@ -1461,8 +1461,24 @@ export async function fetchTeacherActivityData(db: Firestore, userId: string, sc
 }
 
 export async function fetchStudentDashboardData(db: Firestore, userId: string, schoolId: string | null) {
-  const enrollments = await queryDocs(
-    db,
+  const safeQueryDocs = async (collectionName: string, ...constraints: any[]) => {
+    try {
+      return await queryDocs(db, collectionName, ...constraints)
+    } catch {
+      return [] as any[]
+    }
+  }
+
+  const safeGetDocData = async (collectionName: string, docId: string) => {
+    try {
+      const documentSnap = await getDoc(doc(db, collectionName, docId))
+      return documentSnap.exists() ? documentSnap.data() : null
+    } catch {
+      return null
+    }
+  }
+
+  const enrollments = await safeQueryDocs(
     "class_enrollments",
     where("student_id", "==", userId),
     where("status", "==", "active"),
@@ -1479,10 +1495,14 @@ export async function fetchStudentDashboardData(db: Firestore, userId: string, s
   let classes: any[] = []
   if (enrolledClassIds.length) {
     for (const batch of batchIds(enrolledClassIds)) {
-      const constraints: any[] = [where("__name__", "in", batch), where("archived_at", "==", null)]
-      if (schoolId) constraints.push(where("school_id", "==", schoolId))
-      const rows = await queryDocs(db, "classes", ...constraints)
-      classes.push(...rows)
+      const rows = await safeQueryDocs("classes", where("__name__", "in", batch))
+      classes.push(
+        ...rows.filter((row: any) => {
+          if (row.archived_at) return false
+          if (schoolId && row.school_id !== schoolId) return false
+          return true
+        }),
+      )
     }
   }
 
@@ -1491,13 +1511,7 @@ export async function fetchStudentDashboardData(db: Firestore, userId: string, s
   let assignments: any[] = []
   if (activeClassIds.length) {
     for (const batch of batchIds(activeClassIds)) {
-      const rows = await queryDocs(
-        db,
-        "assignments",
-        where("class_id", "in", batch),
-        where("is_published", "==", true),
-        orderBy("due_at", "asc"),
-      )
+      const rows = await safeQueryDocs("assignments", where("class_id", "in", batch))
       assignments.push(...rows)
     }
   }
@@ -1514,15 +1528,9 @@ export async function fetchStudentDashboardData(db: Firestore, userId: string, s
 
   let submissions: any[] = []
   if (assignmentIds.length) {
-    for (const batch of batchIds(assignmentIds)) {
-      const rows = await queryDocs(
-        db,
-        "submissions",
-        where("student_id", "==", userId),
-        where("assignment_id", "in", batch),
-      )
-      submissions.push(...rows)
-    }
+    const assignmentIdSet = new Set(assignmentIds)
+    const allStudentSubmissions = await safeQueryDocs("submissions", where("student_id", "==", userId))
+    submissions = allStudentSubmissions.filter((row: any) => assignmentIdSet.has(row.assignment_id))
   }
 
   const submissionByAssignmentId = new Map<string, any>()
@@ -1533,10 +1541,12 @@ export async function fetchStudentDashboardData(db: Firestore, userId: string, s
   let assignmentShares: any[] = []
   if (assignmentIds.length) {
     for (const batch of batchIds(assignmentIds)) {
-      const constraints: any[] = [where("assignment_id", "in", batch)]
-      if (schoolId) constraints.push(where("school_id", "==", schoolId))
-      const rows = await queryDocs(db, "document_shares", ...constraints)
+      const rows = await safeQueryDocs("document_shares", where("assignment_id", "in", batch))
       assignmentShares.push(...rows)
+    }
+
+    if (schoolId) {
+      assignmentShares = assignmentShares.filter((row: any) => row.school_id === schoolId)
     }
   }
 
@@ -1558,9 +1568,15 @@ export async function fetchStudentDashboardData(db: Firestore, userId: string, s
     return "quiz"
   }
 
-  const personalizedConstraints: any[] = [where("student_id", "==", userId), orderBy("created_at", "desc")]
-  if (schoolId) personalizedConstraints.push(where("school_id", "==", schoolId))
-  const personalized = await queryDocs(db, "personalized_exercises", ...personalizedConstraints)
+  let personalized = await safeQueryDocs("personalized_exercises", where("student_id", "==", userId))
+  if (schoolId) {
+    personalized = personalized.filter((row: any) => row.school_id === schoolId)
+  }
+  personalized.sort((left: any, right: any) => {
+    const leftDate = toDate(left.created_at)?.getTime() || 0
+    const rightDate = toDate(right.created_at)?.getTime() || 0
+    return rightDate - leftDate
+  })
 
   const isCourseExercise = (row: any) => {
     const sourceKind = typeof row.source_kind === "string" ? row.source_kind.trim().toLowerCase() : ""
@@ -1614,8 +1630,7 @@ export async function fetchStudentDashboardData(db: Firestore, userId: string, s
     }))
     .filter((row) => row.total > 0)
 
-  const progressSnap = await getDoc(doc(db, "flashcard_progress", userId))
-  const progressRow = progressSnap.exists() ? progressSnap.data() : null
+  const progressRow = await safeGetDocData("flashcard_progress", userId)
   const fallbackLevel = "B1"
 
   const adaptiveMastery = {
@@ -1638,28 +1653,26 @@ export async function fetchStudentDashboardData(db: Firestore, userId: string, s
     deckCount: 0,
   }
 
-  const learningFlashcards = await queryDocs(
-    db,
+  const learningFlashcards = await safeQueryDocs(
     "flashcards",
     where("student_id", "==", userId),
-    where("status", "==", "learning"),
-    limit(100),
   )
 
   adaptiveMastery.deckCount = learningFlashcards
-    .filter((row: any) => row.source_kind === "adaptive_level")
+    .filter((row: any) => row.status === "learning" && row.source_kind === "adaptive_level")
+    .slice(0, 100)
     .length
 
-  const history = await queryDocs(
-    db,
-    "score_history",
-    where("user_id", "==", userId),
-    orderBy("month_date", "desc"),
-    limit(2),
-  )
+  const history = (await safeQueryDocs("score_history", where("user_id", "==", userId)))
+    .sort((left: any, right: any) => {
+      const leftDate = toDate(left.month_date)?.getTime() || 0
+      const rightDate = toDate(right.month_date)?.getTime() || 0
+      return rightDate - leftDate
+    })
+    .slice(0, 2)
 
-  const xp = await queryDocs(db, "user_xp_events", where("user_id", "==", userId))
-  const badges = await queryDocs(db, "user_badges", where("user_id", "==", userId))
+  const xp = await safeQueryDocs("user_xp_events", where("user_id", "==", userId))
+  const badges = await safeQueryDocs("user_badges", where("user_id", "==", userId))
 
   const thisWeekStart = new Date()
   thisWeekStart.setDate(thisWeekStart.getDate() - 7)
@@ -1670,18 +1683,18 @@ export async function fetchStudentDashboardData(db: Firestore, userId: string, s
     })
     .reduce((sum: number, row: any) => sum + (row.points || 0), 0)
 
-  const skillRows = await queryDocs(
-    db,
-    "student_skill_scores",
-    where("user_id", "==", userId),
-    orderBy("as_of_date", "desc"),
-  )
+  const skillRows = await safeQueryDocs("student_skill_scores", where("user_id", "==", userId))
+  skillRows.sort((left: any, right: any) => {
+    const leftDate = toDate(left.as_of_date)?.getTime() || 0
+    const rightDate = toDate(right.as_of_date)?.getTime() || 0
+    return rightDate - leftDate
+  })
 
   const skillIds = Array.from(new Set(skillRows.map((row: any) => row.skill_id)))
   const skillMap = new Map<string, any>()
   for (const skillId of skillIds) {
-    const skillSnap = await getDoc(doc(db, "skills", skillId))
-    if (skillSnap.exists()) skillMap.set(skillId, skillSnap.data())
+    const skillData = await safeGetDocData("skills", skillId)
+    if (skillData) skillMap.set(skillId, skillData)
   }
 
   const uniqueSkills = new Map<string, any>()
@@ -1704,18 +1717,21 @@ export async function fetchStudentDashboardData(db: Firestore, userId: string, s
     ? assignmentById.get(latestGradeSubmission.assignment_id)
     : null
 
-  const feedbackConstraints: any[] = [
-    where("student_id", "==", userId),
-    orderBy("created_at", "desc"),
-    limit(1),
-  ]
-  if (schoolId) feedbackConstraints.push(where("school_id", "==", schoolId))
-  const feedbackRows = await queryDocs(db, "teacher_feedback", ...feedbackConstraints)
+  let feedbackRows = await safeQueryDocs("teacher_feedback", where("student_id", "==", userId))
+  if (schoolId) {
+    feedbackRows = feedbackRows.filter((row: any) => row.school_id === schoolId)
+  }
+  feedbackRows.sort((left: any, right: any) => {
+    const leftDate = toDate(left.created_at)?.getTime() || 0
+    const rightDate = toDate(right.created_at)?.getTime() || 0
+    return rightDate - leftDate
+  })
+  feedbackRows = feedbackRows.slice(0, 1)
 
   let feedbackTeacherName: string | null = null
   if (feedbackRows[0]?.teacher_id) {
-    const teacherSnap = await getDoc(doc(db, "profiles", feedbackRows[0].teacher_id))
-    feedbackTeacherName = teacherSnap.exists() ? teacherSnap.data()?.full_name || null : null
+    const teacherData = await safeGetDocData("profiles", feedbackRows[0].teacher_id)
+    feedbackTeacherName = teacherData?.full_name || null
   }
 
   const toDateKey = (date: Date) => date.toISOString().slice(0, 10)
@@ -1724,13 +1740,11 @@ export async function fetchStudentDashboardData(db: Firestore, userId: string, s
   const practiceStart = new Date(today)
   practiceStart.setDate(practiceStart.getDate() - 13)
 
-  const practiceRows = await queryDocs(
-    db,
-    "practice_daily",
-    where("user_id", "==", userId),
-    where("practice_date", ">=", toDateKey(practiceStart)),
-    where("practice_date", "<=", todayKey),
-  )
+  const practiceRows = (await safeQueryDocs("practice_daily", where("user_id", "==", userId)))
+    .filter((row: any) => {
+      const dateKey = typeof row.practice_date === "string" ? row.practice_date : ""
+      return !!dateKey && dateKey >= toDateKey(practiceStart) && dateKey <= todayKey
+    })
 
   const activePracticeDates = new Set(
     practiceRows
@@ -1766,8 +1780,8 @@ export async function fetchStudentDashboardData(db: Firestore, userId: string, s
   if (pendingCourseExercises.length) {
     missionQueue.push({
       id: "course-exercises",
-      title: `${pendingCourseExercises.length} exercice(s) de cours a terminer`,
-      subtitle: "Poursuis les modules du topic en melangeant comprehension, vocabulaire et structure.",
+      title: `${pendingCourseExercises.length} exercice(s) de cours à terminer`,
+      subtitle: "Poursuis les modules du thème en mélangeant compréhension, vocabulaire et structure.",
       href: "/student/course-exercises",
       urgent: pendingCourseExercises.length >= 3,
       kind: "course",
@@ -1780,7 +1794,7 @@ export async function fetchStudentDashboardData(db: Firestore, userId: string, s
       id: `assignment:${assignment.id}`,
       title: assignment.title || "Devoir",
       subtitle: dueDate
-        ? `Echeance ${dueDate.toLocaleDateString("fr-FR")}${assignmentIdsWithDocuments.has(assignment.id) ? " · document joint" : ""}`
+        ? `Échéance ${dueDate.toLocaleDateString("fr-FR")}${assignmentIdsWithDocuments.has(assignment.id) ? " · document joint" : ""}`
         : `Sans date limite${assignmentIdsWithDocuments.has(assignment.id) ? " · document joint" : ""}`,
       href: `/student/exercises?tab=${assignmentTab(assignment.type || "quiz")}&assignment=${assignment.id}`,
       urgent: !!dueDate && dueDate.getTime() - Date.now() < 1000 * 60 * 60 * 48,
@@ -1791,8 +1805,8 @@ export async function fetchStudentDashboardData(db: Firestore, userId: string, s
   if (pendingRemediationExercises.length) {
     missionQueue.push({
       id: "remediation",
-      title: `${pendingRemediationExercises.length} exercice(s) personnalise(s) a finaliser`,
-      subtitle: "Consolide les points de correction donnes par ton enseignant.",
+      title: `${pendingRemediationExercises.length} exercice(s) personnalisé(s) à finaliser`,
+      subtitle: "Consolide les points de correction donnés par ton enseignant.",
       href: "/student/exercises?tab=personalized",
       urgent: pendingRemediationExercises.length >= 2,
       kind: "remediation",
@@ -1803,7 +1817,7 @@ export async function fetchStudentDashboardData(db: Firestore, userId: string, s
     missionQueue.push({
       id: "flashcards",
       title: `${adaptiveMastery.deckCount} flashcard(s) adaptative(s) active(s)`,
-      subtitle: "Fais une serie pour monter de niveau sur vocabulaire, grammaire et temps.",
+      subtitle: "Fais une série pour monter de niveau sur vocabulaire, grammaire et temps.",
       href: "/student/flashcards",
       urgent: adaptiveMastery.deckCount >= 12,
       kind: "flashcards",
@@ -1813,8 +1827,8 @@ export async function fetchStudentDashboardData(db: Firestore, userId: string, s
   if (!missionQueue.length) {
     missionQueue.push({
       id: "revision",
-      title: "Aucune urgence - lance une session de revision",
-      subtitle: "Choisis un topic, revise les documents puis enchaine sur les flashcards.",
+      title: "Aucune urgence - lance une session de révision",
+      subtitle: "Choisis un thème, révise les documents puis enchaîne sur les flashcards.",
       href: "/student/documents",
       urgent: false,
       kind: "course",
@@ -1853,7 +1867,7 @@ export async function fetchStudentDashboardData(db: Firestore, userId: string, s
       currentStreak,
     },
     skills: Array.from(uniqueSkills.values()).slice(0, 5).map((row: any) => ({
-      label: skillMap.get(row.skill_id)?.label || "Competence",
+      label: skillMap.get(row.skill_id)?.label || "Compétence",
       score: Math.round(row.score || 0),
     })),
   }

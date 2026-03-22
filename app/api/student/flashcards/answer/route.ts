@@ -37,7 +37,7 @@ function badRequest(message: string) {
 export async function POST(request: Request) {
   const callerUid = await getCallerUid(request)
   if (!callerUid) {
-    return NextResponse.json({ error: "Non autorise." }, { status: 401 })
+    return NextResponse.json({ error: "Non autorisé." }, { status: 401 })
   }
 
   let payload: AnswerPayload
@@ -135,7 +135,7 @@ export async function POST(request: Request) {
     })
   } catch (error: any) {
     return NextResponse.json(
-      { error: error?.message || "Impossible de corriger la reponse." },
+      { error: error?.message || "Impossible de corriger la réponse." },
       { status: 500 },
     )
   }

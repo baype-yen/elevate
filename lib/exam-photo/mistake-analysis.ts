@@ -193,26 +193,26 @@ function exerciseVolume(level: "a1" | "a2" | "b1" | "b2" | "c1" | "c2") {
 
 function evidenceBlock(category: MistakeCategory, evidence: string[]) {
   if (!evidence.length) {
-    return `Aucune erreur claire n'a ete detectee par OCR pour ${mistakeCategoryLabel[category].toLowerCase()}. Fais un exercice de renforcement cible.`
+    return `Aucune erreur claire n'a été détectée par OCR pour ${mistakeCategoryLabel[category].toLowerCase()}. Fais un exercice de renforcement ciblé.`
   }
 
   return [
-    "Erreurs reperees dans ta copie:",
+    "Erreurs repérées dans ta copie:",
     ...evidence.map((item) => `- ${item}`),
   ].join("\n")
 }
 
 function categoryTask(category: MistakeCategory, count: number) {
   if (category === "vocabulary") {
-    return `Consigne: remplace les mots/expressions faibles par des formulations professionnelles puis redige ${Math.max(3, Math.round(count / 2))} phrases de reemploi.`
+    return `Consigne: remplace les mots/expressions faibles par des formulations professionnelles puis rédige ${Math.max(3, Math.round(count / 2))} phrases de réemploi.`
   }
 
   if (category === "grammar") {
-    return `Consigne: corrige ${count} phrases ciblees (accord sujet-verbe, articles, structures) puis explique la regle utilisee pour 2 phrases.`
+    return `Consigne: corrige ${count} phrases ciblées (accord sujet-verbe, articles, structures) puis explique la règle utilisée pour 2 phrases.`
   }
 
   if (category === "tense") {
-    return `Consigne: reecris ${count} phrases au temps correct (present, preterit, present perfect) avec les marqueurs temporels adaptes.`
+    return `Consigne: réécris ${count} phrases au temps correct (présent, prétérit, present perfect) avec les marqueurs temporels adaptés.`
   }
 
   if (category === "word_order") {
@@ -220,7 +220,7 @@ function categoryTask(category: MistakeCategory, count: number) {
   }
 
   if (category === "spelling") {
-    return `Consigne: corrige ${count} mots/phrases mal orthographies, puis cree une mini-liste personnelle de 10 mots a memoriser.`
+    return `Consigne: corrige ${count} mots/phrases mal orthographiés, puis crée une mini-liste personnelle de 10 mots à mémoriser.`
   }
 
   return `Consigne: corrige la ponctuation et la capitalisation dans ${count} phrases, puis ajoute la ponctuation finale adaptee.`

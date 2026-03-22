@@ -70,7 +70,7 @@ function missionKindLabel(kind: MissionKind) {
   if (kind === "course") return "Parcours cours"
   if (kind === "assignment") return "Examen blanc"
   if (kind === "flashcards") return "Flashcards"
-  return "Remediation"
+  return "Remédiation"
 }
 
 function missionKindClass(kind: MissionKind) {
@@ -96,11 +96,45 @@ export default function StudentDashboard() {
   const { context, loading } = useAppContext()
   const router = useRouter()
   const [data, setData] = useState<StudentDashboardData | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!context) return
-    fetchStudentDashboardData(db, context.userId, context.activeSchoolId).then(setData)
-  }, [context])
+
+    let active = true
+    setError(null)
+    setData(null)
+
+    fetchStudentDashboardData(db, context.userId, context.activeSchoolId)
+      .then((payload) => {
+        if (!active) return
+        setData(payload)
+      })
+      .catch(() => {
+        if (!active) return
+        setError("Impossible de charger le tableau de bord pour le moment.")
+        setData(null)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [context?.userId, context?.activeSchoolId])
+
+  const retryLoad = async () => {
+    if (!context) return
+
+    setError(null)
+    setData(null)
+
+    try {
+      const payload = await fetchStudentDashboardData(db, context.userId, context.activeSchoolId)
+      setData(payload)
+    } catch {
+      setError("Impossible de charger le tableau de bord pour le moment.")
+      setData(null)
+    }
+  }
 
   const adaptiveRows = useMemo(
     () => [
@@ -111,7 +145,25 @@ export default function StudentDashboard() {
     [],
   )
 
-  if (loading || !data) {
+  if (loading) {
+    return <div className="font-sans text-sm text-text-mid">Chargement du tableau de bord...</div>
+  }
+
+  if (error) {
+    return (
+      <div className="bg-card rounded-2xl border border-gray-mid p-5 flex flex-col gap-3 max-w-[560px]">
+        <div className="font-serif text-lg font-bold text-navy">Tableau de bord indisponible</div>
+        <div className="font-sans text-sm text-text-mid">{error}</div>
+        <div>
+          <ElevateButton size="sm" variant="outline" icon={<Icons.ArrowRight />} onClick={retryLoad}>
+            Réessayer
+          </ElevateButton>
+        </div>
+      </div>
+    )
+  }
+
+  if (!data) {
     return <div className="font-sans text-sm text-text-mid">Chargement du tableau de bord...</div>
   }
 
@@ -121,8 +173,8 @@ export default function StudentDashboard() {
         <StatCard icon={<Icons.Target />} label="Missions actives" value={String(data.missionQueue.length)} accentBg="bg-navy/10" accentText="text-navy" />
         <StatCard icon={<Icons.BarChart />} label="Score global" value={`${data.overallScore}%`} accentBg="bg-violet/10" accentText="text-violet" />
         <StatCard icon={<Icons.Zap />} label="XP 7 jours" value={String(data.xpWeek)} accentBg="bg-abricot/10" accentText="text-abricot-dark" />
-        <StatCard icon={<Icons.Flame />} label="Serie active" value={`${data.momentum.currentStreak} j`} accentBg="bg-watermelon/10" accentText="text-watermelon" />
-        <StatCard icon={<Icons.Check />} label="Modules termines" value={String(data.lessonsDone)} accentBg="bg-navy-light/10" accentText="text-navy" />
+        <StatCard icon={<Icons.Flame />} label="Série active" value={`${data.momentum.currentStreak} j`} accentBg="bg-watermelon/10" accentText="text-watermelon" />
+        <StatCard icon={<Icons.Check />} label="Modules terminés" value={String(data.lessonsDone)} accentBg="bg-navy-light/10" accentText="text-navy" />
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-[1.45fr_1fr] gap-4">
@@ -168,8 +220,8 @@ export default function StudentDashboard() {
         <div className="bg-card rounded-2xl border border-gray-mid p-5">
           <div className="flex items-start justify-between gap-3 mb-4">
             <div>
-              <h4 className="font-serif text-lg font-bold text-navy">Maitrise adaptative</h4>
-              <p className="font-sans text-[13px] text-text-mid">Niveau en temps reel sur les flashcards.</p>
+              <h4 className="font-serif text-lg font-bold text-navy">Maîtrise adaptative</h4>
+              <p className="font-sans text-[13px] text-text-mid">Niveau en temps réel sur les flashcards.</p>
             </div>
             <span className="rounded-md bg-violet/10 px-2.5 py-1 font-sans text-[11px] font-semibold text-violet">
               Deck actif: {data.adaptiveMastery.deckCount}
@@ -186,7 +238,7 @@ export default function StudentDashboard() {
                     <span className="font-sans text-[13px] font-semibold text-text-dark">{row.label}</span>
                     <span className="font-sans text-[12px] text-text-mid">Niveau {data.adaptiveMastery.levels[row.key]}</span>
                   </div>
-                  <ProgressBar value={Math.min(100, streak * 20)} color={row.color} sublabel={`Serie ${streak}`} />
+                  <ProgressBar value={Math.min(100, streak * 20)} color={row.color} sublabel={`Série ${streak}`} />
                 </div>
               )
             })}
@@ -202,8 +254,8 @@ export default function StudentDashboard() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="bg-card rounded-2xl border border-gray-mid p-5">
-          <h4 className="font-serif text-base font-bold text-navy mb-1">Progression par topic</h4>
-          <p className="font-sans text-[13px] text-text-mid mb-4">Modules mixes dans "Exercices bases sur les cours".</p>
+          <h4 className="font-serif text-base font-bold text-navy mb-1">Progression par thème</h4>
+          <p className="font-sans text-[13px] text-text-mid mb-4">Modules mixtes dans "Exercices basés sur les cours".</p>
 
           <div className="flex flex-col gap-3">
             {data.moduleProgress.map((topic, index) => (
@@ -212,10 +264,10 @@ export default function StudentDashboard() {
                   value={topic.completed}
                   max={Math.max(1, topic.total)}
                   label={topic.topicLabel}
-                  sublabel={`${topic.completed}/${topic.total} termines`}
+                  sublabel={`${topic.completed}/${topic.total} terminés`}
                   color={index % 3 === 0 ? "bg-navy" : index % 3 === 1 ? "bg-violet" : "bg-abricot"}
                 />
-                <div className="font-sans text-[11px] text-text-light mt-1.5">{topic.pending} mission(s) en attente sur ce topic</div>
+                <div className="font-sans text-[11px] text-text-light mt-1.5">{topic.pending} mission(s) en attente sur ce thème</div>
               </div>
             ))}
 
@@ -227,7 +279,7 @@ export default function StudentDashboard() {
 
         <div className="bg-card rounded-2xl border border-gray-mid p-5 flex flex-col">
           <h4 className="font-serif text-base font-bold text-navy mb-1">Boucle de feedback</h4>
-          <p className="font-sans text-[13px] text-text-mid mb-4">Derniere correction et points a retravailler.</p>
+          <p className="font-sans text-[13px] text-text-mid mb-4">Dernière correction et points à retravailler.</p>
 
           {data.feedbackLoop.latestGrade ? (
             <div className="rounded-lg border border-violet/25 bg-violet/8 px-3 py-2.5 mb-3">
@@ -243,7 +295,7 @@ export default function StudentDashboard() {
             </div>
           ) : (
             <div className="rounded-lg border border-gray-light bg-off-white px-3 py-2.5 font-sans text-sm text-text-mid mb-3">
-              Aucune note corrigee pour le moment.
+              Aucune note corrigée pour le moment.
             </div>
           )}
 
@@ -260,10 +312,10 @@ export default function StudentDashboard() {
 
           <div className="rounded-lg border border-abricot/30 bg-abricot/10 px-3 py-2.5 mb-4">
             <div className="font-sans text-[12px] text-abricot-dark font-semibold">
-              Remediation en attente: {data.feedbackLoop.pendingRemediation}
+              Remédiation en attente: {data.feedbackLoop.pendingRemediation}
             </div>
             <div className="font-sans text-[12px] text-text-mid mt-1">
-              Continue tes exercices personnalises pour fermer la boucle correction → progression.
+              Continue tes exercices personnalisés pour fermer la boucle correction → progression.
             </div>
           </div>
 
@@ -271,21 +323,21 @@ export default function StudentDashboard() {
             <ElevateButton size="sm" variant="primary" icon={<Icons.ArrowRight />} onClick={() => router.push("/student/exercises?tab=personalized")}>
               Ouvrir mes exercices
             </ElevateButton>
-            <ElevateButton size="sm" variant="ghost" onClick={() => router.push("/student/progress")}>Voir mes progres</ElevateButton>
+            <ElevateButton size="sm" variant="ghost" onClick={() => router.push("/student/progress")}>Voir mes progrès</ElevateButton>
           </div>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="bg-card rounded-2xl border border-gray-mid p-5">
-          <h4 className="font-serif text-base font-bold text-navy mb-4">Competences observees</h4>
+          <h4 className="font-serif text-base font-bold text-navy mb-4">Compétences observées</h4>
           <div className="flex flex-col gap-3.5">
             {(data.skills.length
               ? data.skills
               : [
                 { label: "Lecture", score: 0 },
                 { label: "Grammaire", score: 0 },
-                { label: "Ecrit", score: 0 },
+                { label: "Écrit", score: 0 },
               ]).map((skill, index) => (
               <ProgressBar
                 key={`${skill.label}:${index}`}
@@ -308,7 +360,7 @@ export default function StudentDashboard() {
               <div className="font-serif text-xl font-bold text-navy mt-0.5">{data.momentum.activeDays14}/14</div>
             </div>
             <div className="rounded-lg border border-gray-light bg-off-white px-3 py-2.5">
-              <div className="font-sans text-[12px] text-text-light">Serie actuelle</div>
+               <div className="font-sans text-[12px] text-text-light">Série actuelle</div>
               <div className="font-serif text-xl font-bold text-navy mt-0.5">{data.momentum.currentStreak} j</div>
             </div>
             <div className="rounded-lg border border-gray-light bg-off-white px-3 py-2.5">

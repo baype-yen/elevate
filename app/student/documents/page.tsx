@@ -174,7 +174,7 @@ export default function StudentDocumentsPage() {
                     <div className="flex flex-col gap-2">
                       {rows.map(renderDocumentRow)}
                       {!rows.length && (
-                        <div className="font-sans text-xs text-text-light">Aucun document pour cette categorie.</div>
+                        <div className="font-sans text-xs text-text-light">Aucun document pour cette catégorie.</div>
                       )}
                     </div>
                   </div>
@@ -196,7 +196,7 @@ export default function StudentDocumentsPage() {
 
       {!documents.length && (
         <div className="font-sans text-sm text-text-mid px-1 py-2">
-          Aucun document n'a encore ete partage pour vos classes.
+          Aucun document n'a encore été partagé pour vos classes.
         </div>
       )}
     </div>

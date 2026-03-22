@@ -76,20 +76,20 @@ function typeLabel(type: string) {
 
 const MODULE_BLUEPRINTS: Array<{ title: string; subtitle: string }> = [
   {
-    title: "Module 1 - Comprehension du cours",
-    subtitle: "Comprendre le fond, puis verifier le vocabulaire et les structures.",
+    title: "Module 1 - Compréhension du cours",
+    subtitle: "Comprendre le fond, puis vérifier le vocabulaire et les structures.",
   },
   {
-    title: "Module 2 - Entrainement guide",
-    subtitle: "Reutiliser les notions sur des questions variees et progressives.",
+    title: "Module 2 - Entraînement guidé",
+    subtitle: "Réutiliser les notions sur des questions variées et progressives.",
   },
   {
     title: "Module 3 - Consolidation active",
-    subtitle: "Melanger les competences pour gagner en autonomie.",
+    subtitle: "Mélanger les compétences pour gagner en autonomie.",
   },
   {
-    title: "Module 4 - Defi final",
-    subtitle: "Valider les acquis sur un bloc mixte proche de l'evaluation.",
+    title: "Module 4 - Défi final",
+    subtitle: "Valider les acquis sur un bloc mixte proche de l'évaluation.",
   },
 ]
 
@@ -201,8 +201,8 @@ function buildTopicModules(rows: CourseExerciseRow[]): CourseTopicModule[] {
     }
 
     const blueprint = MODULE_BLUEPRINTS[moduleIndex] || {
-      title: `Module ${moduleIndex + 1} - Pratique complementaire`,
-      subtitle: "Continuer la progression sur un mix d'exercices cibles.",
+      title: `Module ${moduleIndex + 1} - Pratique complémentaire`,
+      subtitle: "Continuer la progression sur un mix d'exercices ciblés.",
     }
 
     modules.push({
@@ -240,7 +240,7 @@ function referencesMissingQuestions(instructions: string) {
     .replace(/[\u0300-\u036f]/g, "")
   if (!normalized) return false
 
-  return /(reponds?|repondez)[^\n]{0,60}questions?/.test(normalized)
+  return /(reponds?|réponds?|repondez|répondez)[^\n]{0,60}questions?/.test(normalized)
     || /questions?\s+(suivantes?|ci-dessous|dessous)/.test(normalized)
 }
 
@@ -251,12 +251,12 @@ function fallbackStructuredQuestions(type: string): CourseExerciseQuestion[] {
     return [
       {
         id: "q1",
-        prompt: "Quelle proposition resume le mieux l'idee principale du document ?",
+        prompt: "Quelle proposition résume le mieux l'idée principale du document ?",
         questionType: "single_choice",
         options: [
-          "Le document presente le theme principal du cours.",
+          "Le document présente le thème principal du cours.",
           "Le document parle d'un sujet hors cours.",
-          "Le document ne contient aucune idee centrale.",
+          "Le document ne contient aucune idée centrale.",
         ],
       },
       {
@@ -267,17 +267,17 @@ function fallbackStructuredQuestions(type: string): CourseExerciseQuestion[] {
       },
       {
         id: "q3",
-        prompt: "Quelle information est bien presente dans le document ?",
+        prompt: "Quelle information est bien présente dans le document ?",
         questionType: "single_choice",
         options: [
-          "Un detail explicitement mentionne dans le texte.",
+          "Un détail explicitement mentionné dans le texte.",
           "Une information qui contredit le texte.",
-          "Une idee jamais evoquee dans le texte.",
+          "Une idée jamais évoquée dans le texte.",
         ],
       },
       {
         id: "q4",
-        prompt: "Cite un exemple precis du document et explique son importance.",
+        prompt: "Cite un exemple précis du document et explique son importance.",
         questionType: "short_answer",
         options: [],
       },
@@ -288,23 +288,23 @@ function fallbackStructuredQuestions(type: string): CourseExerciseQuestion[] {
     return [
       {
         id: "q1",
-        prompt: "Quel choix correspond a un mot-cle du document ?",
+        prompt: "Quel choix correspond à un mot-clé du document ?",
         questionType: "single_choice",
         options: [
           "Un mot important qui revient dans le document.",
-          "Un mot sans lien avec le theme etudie.",
+          "Un mot sans lien avec le thème étudié.",
           "Un mot absent du document.",
         ],
       },
       {
         id: "q2",
-        prompt: "Choisis un mot du document et donne sa signification en francais.",
+        prompt: "Choisis un mot du document et donne sa signification en français.",
         questionType: "short_answer",
         options: [],
       },
       {
         id: "q3",
-        prompt: "Quelle phrase reutilise correctement le vocabulaire du document ?",
+        prompt: "Quelle phrase réutilise correctement le vocabulaire du document ?",
         questionType: "single_choice",
         options: [
           "Une phrase qui respecte le sens du mot choisi.",
@@ -314,7 +314,7 @@ function fallbackStructuredQuestions(type: string): CourseExerciseQuestion[] {
       },
       {
         id: "q4",
-        prompt: "Ecris une phrase simple en anglais avec un mot du document.",
+        prompt: "Écris une phrase simple en anglais avec un mot du document.",
         questionType: "short_answer",
         options: [],
       },
@@ -325,17 +325,17 @@ function fallbackStructuredQuestions(type: string): CourseExerciseQuestion[] {
     return [
       {
         id: "q1",
-        prompt: "Quel choix respecte la regle de grammaire vue en cours ?",
+        prompt: "Quel choix respecte la règle de grammaire vue en cours ?",
         questionType: "single_choice",
         options: [
-          "La phrase applique correctement la regle.",
-          "La phrase melange des structures sans logique.",
-          "La phrase ignore la regle etudiee.",
+          "La phrase applique correctement la règle.",
+          "La phrase mélange des structures sans logique.",
+          "La phrase ignore la règle étudiée.",
         ],
       },
       {
         id: "q2",
-        prompt: "Reecris une phrase du document avec la structure grammaticale ciblee.",
+        prompt: "Réécris une phrase du document avec la structure grammaticale ciblée.",
         questionType: "short_answer",
         options: [],
       },
@@ -344,14 +344,14 @@ function fallbackStructuredQuestions(type: string): CourseExerciseQuestion[] {
         prompt: "Quel exemple est le plus proche du point de grammaire travaille ?",
         questionType: "single_choice",
         options: [
-          "Un exemple conforme a la regle du cours.",
+          "Un exemple conforme à la règle du cours.",
           "Un exemple hors sujet grammatical.",
-          "Un exemple qui introduit une autre regle.",
+          "Un exemple qui introduit une autre règle.",
         ],
       },
       {
         id: "q4",
-        prompt: "Explique en francais la regle appliquee dans ta transformation.",
+        prompt: "Explique en français la règle appliquée dans ta transformation.",
         questionType: "short_answer",
         options: [],
       },
@@ -365,14 +365,14 @@ function fallbackStructuredQuestions(type: string): CourseExerciseQuestion[] {
         prompt: "Quelle option utilise le bon temps verbal ?",
         questionType: "single_choice",
         options: [
-          "La phrase respecte le temps demande.",
+          "La phrase respecte le temps demandé.",
           "La phrase utilise un temps incompatible.",
-          "La phrase omet le verbe correctement conjugue.",
+          "La phrase omet le verbe correctement conjugué.",
         ],
       },
       {
         id: "q2",
-        prompt: "Conjugue un verbe du document dans le temps demande.",
+        prompt: "Conjugue un verbe du document dans le temps demandé.",
         questionType: "short_answer",
         options: [],
       },
@@ -388,7 +388,7 @@ function fallbackStructuredQuestions(type: string): CourseExerciseQuestion[] {
       },
       {
         id: "q4",
-        prompt: "Explique en francais pourquoi ce temps est adapte au contexte.",
+        prompt: "Explique en français pourquoi ce temps est adapté au contexte.",
         questionType: "short_answer",
         options: [],
       },
@@ -398,7 +398,7 @@ function fallbackStructuredQuestions(type: string): CourseExerciseQuestion[] {
   return [
     {
       id: "q1",
-      prompt: "Quelle proposition est la plus fidele au document de cours ?",
+      prompt: "Quelle proposition est la plus fidèle au document de cours ?",
       questionType: "single_choice",
       options: [
         "Une proposition en lien direct avec le document.",
@@ -408,23 +408,23 @@ function fallbackStructuredQuestions(type: string): CourseExerciseQuestion[] {
     },
     {
       id: "q2",
-      prompt: "Resume en 2 a 3 phrases ce que tu retiens du document.",
+      prompt: "Résume en 2 à 3 phrases ce que tu retiens du document.",
       questionType: "short_answer",
       options: [],
     },
     {
       id: "q3",
-      prompt: "Quel choix reutilise correctement un element du cours ?",
+      prompt: "Quel choix réutilise correctement un élément du cours ?",
       questionType: "single_choice",
       options: [
         "Le choix respecte le sens du document.",
-        "Le choix deforme le sens du document.",
-        "Le choix n'utilise aucun element du document.",
+        "Le choix déforme le sens du document.",
+        "Le choix n'utilise aucun élément du document.",
       ],
     },
     {
       id: "q4",
-      prompt: "Donne un exemple personnel en anglais a partir du document.",
+      prompt: "Donne un exemple personnel en anglais à partir du document.",
       questionType: "short_answer",
       options: [],
     },
@@ -508,14 +508,14 @@ function resolvedQuestions(exercise: CourseExerciseRow) {
 function resolvedInstructions(exercise: CourseExerciseRow) {
   const instructions = (exercise.instructions || "").trim()
   if (!instructions) {
-    return "Lisez le document de cours puis repondez a toutes les questions ci-dessous."
+    return "Lisez le document de cours puis répondez à toutes les questions ci-dessous."
   }
 
   if (hasExplicitQuestions(instructions) || !referencesMissingQuestions(instructions)) {
     return instructions
   }
 
-  return `${instructions}\n\nRepondez directement aux questions ci-dessous.`
+  return `${instructions}\n\nRépondez directement aux questions ci-dessous.`
 }
 
 function normalizeHintText(value: string) {
@@ -533,38 +533,38 @@ function questionHint(exercise: CourseExerciseRow, question: CourseExerciseQuest
   const type = (exercise.materialType || exercise.type || "").toLowerCase()
 
   if (/pronom relatif|clause relative|relative/.test(prompt)) {
-    return "Rappel: who = personne, which = chose. Verifie le mot remplace et le verbe qui suit."
+    return "Rappel: who = personne, which = chose. Vérifie le mot remplacé et le verbe qui suit."
   }
 
   if (/modal|modaux|possibilit|can|could|may|might/.test(prompt)) {
-    return "Repere le sens attendu: capacite, possibilite ou permission, puis choisis le modal adapte."
+    return "Repère le sens attendu: capacité, possibilité ou permission, puis choisis le modal adapté."
   }
 
   if (/combinez|combine|reecri|reformule|transform/.test(prompt)) {
-    return "Conserve les deux idees de depart, puis relie-les avec une structure grammaticale correcte."
+    return "Conserve les deux idées de départ, puis relie-les avec une structure grammaticale correcte."
   }
 
   if (/temps verbal|conjug|preterit|present perfect|past|future/.test(prompt) || type === "conjugation") {
-    return "Trouve d'abord le repere de temps, puis accorde le verbe avec le sujet."
+    return "Trouve d'abord le repère de temps, puis accorde le verbe avec le sujet."
   }
 
   if (type === "grammar") {
-    return "Relis la structure complete (sujet, verbe, complement) et verifie la regle de grammaire ciblee."
+    return "Relis la structure complète (sujet, verbe, complément) et vérifie la règle de grammaire ciblée."
   }
 
   if (type === "vocabulary") {
-    return "Choisis le mot qui colle au contexte de la phrase, pas seulement a une traduction litterale."
+    return "Choisis le mot qui colle au contexte de la phrase, pas seulement à une traduction littérale."
   }
 
   if (type === "reading") {
-    return "Reviens au document source et appuie-toi sur un detail precis pour valider ta reponse."
+    return "Reviens au document source et appuie-toi sur un détail précis pour valider ta réponse."
   }
 
   if (question.questionType === "single_choice") {
     return "Lis chaque option jusqu'au bout et elimine d'abord celles qui ne respectent pas la consigne."
   }
 
-  return "Ecris une reponse courte, claire et complete en anglais, avec au moins un mot du cours."
+  return "Écris une réponse courte, claire et complète en anglais, avec au moins un mot du cours."
 }
 
 function isCourseExerciseCandidate(exercise: any) {
@@ -638,7 +638,7 @@ export default function StudentCourseExercisesPage() {
       setExercises(courseRows)
     } catch (e: any) {
       setExercises([])
-      setError(e.message || "Impossible de charger les exercices bases sur les cours.")
+      setError(e.message || "Impossible de charger les exercices basés sur les cours.")
     }
   }
 
@@ -733,7 +733,7 @@ export default function StudentCourseExercisesPage() {
 
     const unansweredQuestions = questions.filter((question) => !(draftAnswers[question.id] || "").trim())
     if (unansweredQuestions.length) {
-      setError(`Repondez a toutes les questions (${unansweredQuestions.length} reponse(s) manquante(s)).`)
+      setError(`Répondez à toutes les questions (${unansweredQuestions.length} réponse(s) manquante(s)).`)
       return
     }
 
@@ -743,7 +743,7 @@ export default function StudentCourseExercisesPage() {
     }, {} as Record<string, string>)
 
     const response = questions
-      .map((question, index) => `${index + 1}. ${question.prompt}\nReponse: ${submittedAnswers[question.id]}`)
+      .map((question, index) => `${index + 1}. ${question.prompt}\nRéponse: ${submittedAnswers[question.id]}`)
       .join("\n\n")
 
     try {
@@ -777,10 +777,10 @@ export default function StudentCourseExercisesPage() {
       })
 
       setOpenExerciseId(null)
-      setSuccess("Reponses enregistrees. Exercice termine.")
+      setSuccess("Réponses enregistrées. Exercice terminé.")
       await loadExercises()
     } catch (e: any) {
-      setError(e.message || "Impossible d'enregistrer vos reponses.")
+      setError(e.message || "Impossible d'enregistrer vos réponses.")
     } finally {
       setBusyExerciseId(null)
     }
@@ -799,7 +799,7 @@ export default function StudentCourseExercisesPage() {
     if (answeredRows.length) {
       return (
         <div className="mt-3 rounded-lg border border-violet/20 bg-violet/5 px-3 py-2.5">
-          <div className="font-sans text-[12px] font-semibold text-violet mb-1">Mes reponses</div>
+          <div className="font-sans text-[12px] font-semibold text-violet mb-1">Mes réponses</div>
           <div className="flex flex-col gap-2">
             {answeredRows.map((row) => (
               <div key={row.key}>
@@ -816,7 +816,7 @@ export default function StudentCourseExercisesPage() {
 
     return (
       <div className="mt-3 rounded-lg border border-violet/20 bg-violet/5 px-3 py-2.5">
-        <div className="font-sans text-[12px] font-semibold text-violet mb-1">Ma reponse</div>
+        <div className="font-sans text-[12px] font-semibold text-violet mb-1">Ma réponse</div>
         <p className="font-sans text-sm text-text-dark whitespace-pre-wrap leading-relaxed">{exercise.responseText}</p>
       </div>
     )
@@ -857,7 +857,7 @@ export default function StudentCourseExercisesPage() {
                 </span>
               )}
               {exercise.sourceDocumentName && <span>Source: {exercise.sourceDocumentName}</span>}
-              {exercise.responseSubmittedAt && <span>Repondu le {new Date(exercise.responseSubmittedAt).toLocaleDateString("fr-FR")}</span>}
+              {exercise.responseSubmittedAt && <span>Répondu le {new Date(exercise.responseSubmittedAt).toLocaleDateString("fr-FR")}</span>}
             </div>
             <div className="font-sans text-sm text-text-mid mt-2 whitespace-pre-wrap leading-relaxed">
               {resolvedInstructions(exercise)}
@@ -883,9 +883,9 @@ export default function StudentCourseExercisesPage() {
           <div className="flex flex-col items-end gap-2 shrink-0">
             <LevelBadge level={exercise.level} colorClass={levelColorClass(exercise.level)} />
             {exercise.isCompleted ? (
-              <span className="px-2.5 py-1 rounded-md text-[11px] font-semibold font-sans bg-violet/10 text-violet">Termine</span>
+              <span className="px-2.5 py-1 rounded-md text-[11px] font-semibold font-sans bg-violet/10 text-violet">Terminé</span>
             ) : (
-              <span className="px-2.5 py-1 rounded-md text-[11px] font-semibold font-sans bg-abricot/15 text-abricot-dark">A faire</span>
+              <span className="px-2.5 py-1 rounded-md text-[11px] font-semibold font-sans bg-abricot/15 text-abricot-dark">À faire</span>
             )}
             <ElevateButton
               size="sm"
@@ -896,7 +896,7 @@ export default function StudentCourseExercisesPage() {
               {openExerciseId === exercise.id
                 ? "Fermer"
                 : exercise.isCompleted
-                ? "Revoir mes reponses"
+                ? "Revoir mes réponses"
                 : "Faire l'exercice"}
             </ElevateButton>
           </div>
@@ -910,7 +910,7 @@ export default function StudentCourseExercisesPage() {
             )}
           >
             <div className="font-sans text-[12px] text-text-mid mb-2">
-              Repondez a toutes les questions puis validez vos reponses.
+              Répondez à toutes les questions puis validez vos réponses.
             </div>
             <div className="font-sans text-[12px] text-text-light mb-2">
               Survolez ou appuyez sur le I pour voir un indice.
@@ -965,7 +965,7 @@ export default function StudentCourseExercisesPage() {
                     <textarea
                       value={answers[question.id] || ""}
                       onChange={(event) => setExerciseAnswer(exercise.id, question.id, event.target.value)}
-                      placeholder="Ecrivez votre reponse ici..."
+                      placeholder="Écrivez votre réponse ici..."
                       className="mt-2 w-full min-h-[88px] rounded-[10px] border-2 border-gray-mid bg-card px-3 py-2 font-sans text-sm text-text-dark placeholder:text-text-light outline-none focus:border-navy focus:shadow-[0_0_0_3px_rgba(27,42,74,0.09)]"
                     />
                   )}
@@ -983,8 +983,8 @@ export default function StudentCourseExercisesPage() {
                 {busyExerciseId === exercise.id
                   ? "Enregistrement..."
                   : exercise.isCompleted
-                  ? "Mettre a jour mes reponses"
-                  : "Valider mes reponses"}
+                  ? "Mettre à jour mes réponses"
+                  : "Valider mes réponses"}
               </ElevateButton>
               <ElevateButton
                 size="sm"
@@ -996,7 +996,7 @@ export default function StudentCourseExercisesPage() {
               </ElevateButton>
               {missingAnswerCount > 0 && (
                 <span className="font-sans text-xs text-text-light">
-                  {missingAnswerCount} reponse(s) manquante(s)
+                  {missingAnswerCount} réponse(s) manquante(s)
                 </span>
               )}
             </div>
@@ -1015,7 +1015,7 @@ export default function StudentCourseExercisesPage() {
       <div className="bg-card rounded-[20px] border border-gray-mid p-6">
         <h3 className="font-serif text-xl font-bold text-navy mb-1">Exercices basés sur les cours</h3>
         <p className="font-sans text-[13px] text-text-mid">
-          Exercices generes automatiquement depuis les documents vus en classe.
+          Exercices générés automatiquement depuis les documents vus en classe.
         </p>
 
         <div className="mt-3 flex flex-wrap gap-2.5">
@@ -1039,7 +1039,7 @@ export default function StudentCourseExercisesPage() {
         </div>
 
         <div className="mt-3 font-sans text-[12px] text-text-mid">
-          Chaque topic est organise en modules mixtes: comprehension, vocabulaire, structure et consolidation.
+          Chaque thème est organisé en modules mixtes: compréhension, vocabulaire, structure et consolidation.
         </div>
       </div>
 
@@ -1048,11 +1048,11 @@ export default function StudentCourseExercisesPage() {
 
       {completedCount > 0 && (
         <div className="rounded-xl border border-violet/30 bg-violet/10 p-4 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <div className="font-sans text-sm font-semibold text-violet">{completedCount} exercice(s) termine(s)</div>
-            <div className="font-sans text-xs text-text-mid mt-0.5">
-              Continue la progression avec des QCM adaptatifs sur vocabulaire, grammaire et temps verbaux.
-            </div>
+            <div>
+              <div className="font-sans text-sm font-semibold text-violet">{completedCount} exercice(s) terminé(s)</div>
+              <div className="font-sans text-xs text-text-mid mt-0.5">
+                Continue la progression avec des QCM adaptatifs sur vocabulaire, grammaire et temps verbaux.
+              </div>
           </div>
           <Link
             href="/student/flashcards"
@@ -1074,7 +1074,7 @@ export default function StudentCourseExercisesPage() {
               <h4 className="font-serif text-lg font-bold text-navy">{topic.label}</h4>
               {!!topicTotal && (
                 <span className="inline-flex rounded-md border border-gray-mid bg-off-white px-2.5 py-1 font-sans text-[11px] font-semibold text-text-mid">
-                  {topicCompleted}/{topicTotal} termines
+                  {topicCompleted}/{topicTotal} terminés
                 </span>
               )}
             </div>
@@ -1100,7 +1100,7 @@ export default function StudentCourseExercisesPage() {
                           moduleTheme.badge,
                         )}
                       >
-                        {module.completedCount}/{module.exercises.length} termines
+                        {module.completedCount}/{module.exercises.length} terminés
                       </span>
                     </div>
 
@@ -1112,7 +1112,7 @@ export default function StudentCourseExercisesPage() {
               })}
 
               {!modules.length && (
-                <div className="font-sans text-sm text-text-mid">Aucun exercice disponible pour ce topic.</div>
+                <div className="font-sans text-sm text-text-mid">Aucun exercice disponible pour ce thème.</div>
               )}
             </div>
           </section>
@@ -1139,7 +1139,7 @@ export default function StudentCourseExercisesPage() {
                         moduleTheme.badge,
                       )}
                     >
-                      {module.completedCount}/{module.exercises.length} termines
+                      {module.completedCount}/{module.exercises.length} terminés
                     </span>
                   </div>
 
@@ -1155,7 +1155,7 @@ export default function StudentCourseExercisesPage() {
 
       {!exercises.length && (
         <div className="font-sans text-sm text-text-mid">
-          Aucun exercice base sur les cours pour le moment. Demandez a votre enseignant de lancer la generation depuis un document partage.
+          Aucun exercice basé sur les cours pour le moment. Demandez à votre enseignant de lancer la génération depuis un document partagé.
         </div>
       )}
     </div>
