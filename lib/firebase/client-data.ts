@@ -16,6 +16,7 @@ import {
   type Firestore,
 } from "firebase/firestore"
 import {
+  COURSE_TOPIC_OPTIONS,
   courseMaterialTypeLabel,
   courseTopicLabel,
   parseCourseMaterialType,
@@ -70,6 +71,7 @@ export type SubmissionPayload = {
 type CourseExerciseQuestionPayload = {
   id: string
   prompt: string
+  hint: string
   questionType: "single_choice" | "short_answer"
   options: string[]
 }
@@ -138,6 +140,7 @@ function parseCourseExerciseQuestions(rawQuestions: any): CourseExerciseQuestion
     const id = typeof (item as any).id === "string" && (item as any).id.trim()
       ? (item as any).id.trim()
       : `q${questions.length + 1}`
+    const hint = typeof (item as any).hint === "string" ? (item as any).hint.trim() : ""
 
     const options = questionType === "single_choice" && Array.isArray((item as any).options)
       ? (item as any).options
@@ -151,6 +154,7 @@ function parseCourseExerciseQuestions(rawQuestions: any): CourseExerciseQuestion
     questions.push({
       id,
       prompt,
+      hint,
       questionType,
       options,
     })
@@ -251,9 +255,10 @@ export async function fetchTeacherDashboardData(db: Firestore, userId: string, s
 
   if (classIds.length) {
     const batches = batchIds(classIds)
+
     for (const batch of batches) {
       const [e, r, a] = await Promise.all([
-        queryDocs(db, "class_enrollments", where("class_id", "in", batch)),
+        queryDocs(db, "class_enrollments", where("class_id", "in", batch), where("status", "==", "active")),
         queryDocs(db, "class_students", where("class_id", "in", batch)),
         queryDocs(db, "assignments", where("class_id", "in", batch)),
       ])
@@ -262,63 +267,274 @@ export async function fetchTeacherDashboardData(db: Firestore, userId: string, s
       assignments.push(...a)
     }
 
-    const assignmentIds = assignments.map((a: any) => a.id)
+    const assignmentIds = assignments.map((assignment: any) => assignment.id)
     if (assignmentIds.length) {
       for (const batch of batchIds(assignmentIds)) {
-        const s = await queryDocs(db, "submissions", where("assignment_id", "in", batch))
-        submissions.push(...s)
+        const rows = await queryDocs(db, "submissions", where("assignment_id", "in", batch))
+        submissions.push(...rows)
       }
     }
   }
 
+  const classNameById = new Map(classes.map((classRow: any) => [classRow.id, classRow.name]))
+
   const studentsByClass = new Map<string, number>()
-  for (const e of enrollments) {
-    studentsByClass.set(e.class_id, (studentsByClass.get(e.class_id) || 0) + (e.status === "active" ? 1 : 0))
+  for (const enrollment of enrollments) {
+    studentsByClass.set(enrollment.class_id, (studentsByClass.get(enrollment.class_id) || 0) + 1)
   }
 
   const rosterByClass = new Map<string, number>()
-  for (const r of rosterStudents) {
-    rosterByClass.set(r.class_id, (rosterByClass.get(r.class_id) || 0) + 1)
+  for (const row of rosterStudents) {
+    rosterByClass.set(row.class_id, (rosterByClass.get(row.class_id) || 0) + 1)
   }
 
   const assignmentToClass = new Map<string, string>()
-  for (const a of assignments) assignmentToClass.set(a.id, a.class_id)
+  for (const assignment of assignments) assignmentToClass.set(assignment.id, assignment.class_id)
 
+  const assignmentsByClass = new Map<string, number>()
+  for (const assignment of assignments) {
+    if (assignment.is_published === false) continue
+    assignmentsByClass.set(assignment.class_id, (assignmentsByClass.get(assignment.class_id) || 0) + 1)
+  }
+
+  const submittedByClass = new Map<string, number>()
+  const pendingByClass = new Map<string, number>()
   const scoresByClass = new Map<string, number[]>()
+
   let pending = 0
-  for (const s of submissions) {
-    const classId = assignmentToClass.get(s.assignment_id)
+  for (const submission of submissions) {
+    const classId = assignmentToClass.get(submission.assignment_id)
     if (!classId) continue
-    if (s.status !== "graded") pending += 1
-    if (typeof s.score === "number") {
-      const arr = scoresByClass.get(classId) || []
-      arr.push(s.score)
-      scoresByClass.set(classId, arr)
+
+    if (submission.status === "submitted" || submission.status === "graded") {
+      submittedByClass.set(classId, (submittedByClass.get(classId) || 0) + 1)
+    }
+
+    if (submission.status !== "graded") {
+      pending += 1
+      pendingByClass.set(classId, (pendingByClass.get(classId) || 0) + 1)
+    }
+
+    if (typeof submission.score === "number") {
+      const scores = scoresByClass.get(classId) || []
+      scores.push(submission.score)
+      scoresByClass.set(classId, scores)
     }
   }
 
-  const classCards = classes.map((c: any) => {
-    const scores = scoresByClass.get(c.id) || []
-    const avg = scores.length ? Math.round(scores.reduce((a: number, b: number) => a + b, 0) / scores.length) : 0
+  const classHealth = classes.map((classRow: any) => {
+    const scores = scoresByClass.get(classRow.id) || []
+    const avg = scores.length ? Math.round(scores.reduce((sum: number, value: number) => sum + value, 0) / scores.length) : 0
+    const students = (rosterByClass.get(classRow.id) || 0) || (studentsByClass.get(classRow.id) || 0)
+    const assignmentsCount = assignmentsByClass.get(classRow.id) || 0
+    const submittedCount = submittedByClass.get(classRow.id) || 0
+    const expectedSubmissions = students > 0 ? students * assignmentsCount : 0
+    const submissionRate = expectedSubmissions > 0
+      ? Math.min(100, Math.round((submittedCount / expectedSubmissions) * 100))
+      : 0
+
     return {
-      id: c.id,
-      name: c.name,
-      level: upLevel(c.cefr_level),
-      students: (rosterByClass.get(c.id) || 0) || (studentsByClass.get(c.id) || 0),
+      id: classRow.id,
+      name: classRow.name,
+      level: upLevel(classRow.cefr_level),
+      students,
       avg,
-      lessons: 0,
+      assignments: assignmentsCount,
+      pending: pendingByClass.get(classRow.id) || 0,
+      submissionRate,
     }
   })
 
-  const allScores = submissions.map((s: any) => s.score).filter((v: any): v is number => typeof v === "number")
-  const overallAvg = allScores.length ? Math.round(allScores.reduce((a: number, b: number) => a + b, 0) / allScores.length) : 0
+  classHealth.sort((left, right) => {
+    if (left.pending !== right.pending) return right.pending - left.pending
+    if (left.submissionRate !== right.submissionRate) return left.submissionRate - right.submissionRate
+    return left.name.localeCompare(right.name, "fr")
+  })
+
+  const allScores = submissions
+    .map((submission: any) => submission.score)
+    .filter((value: any): value is number => typeof value === "number")
+  const overallAvg = allScores.length
+    ? Math.round(allScores.reduce((sum: number, value: number) => sum + value, 0) / allScores.length)
+    : 0
+
+  const pendingSubmissions = submissions
+    .filter((submission: any) => submission.status !== "graded")
+    .sort((left: any, right: any) => {
+      const leftDate = toDate(left.submitted_at)?.getTime() || 0
+      const rightDate = toDate(right.submitted_at)?.getTime() || 0
+      return leftDate - rightDate
+    })
+
+  const pendingStudentIds = Array.from(
+    new Set(
+      pendingSubmissions
+        .map((submission: any) => submission.student_id)
+        .filter((value: unknown): value is string => typeof value === "string" && value.trim().length > 0),
+    ),
+  )
+
+  const profileById = new Map<string, any>()
+  for (const studentId of pendingStudentIds) {
+    const profileSnap = await getDoc(doc(db, "profiles", studentId))
+    if (profileSnap.exists()) {
+      profileById.set(studentId, profileSnap.data())
+    }
+  }
+
+  const assignmentById = new Map(assignments.map((assignment: any) => [assignment.id, assignment]))
+
+  const documentConstraints = schoolId
+    ? [where("owner_id", "==", userId), where("school_id", "==", schoolId), orderBy("created_at", "desc")]
+    : [where("owner_id", "==", userId), where("school_id", "==", null), orderBy("created_at", "desc")]
+
+  const documents = await queryDocs(db, "documents", ...documentConstraints)
+
+  const aiReadyDocuments = documents.filter((documentRow: any) => {
+    const hasSourceText = typeof documentRow.course_source_text === "string"
+      && documentRow.course_source_text.trim().length > 0
+    const hasTopic = !!parseCourseTopic(documentRow.course_topic)
+    const hasMaterial = !!parseCourseMaterialType(documentRow.course_material_type)
+    const targetClassIds = Array.isArray(documentRow.target_class_ids)
+      ? documentRow.target_class_ids
+          .filter((value: unknown): value is string => typeof value === "string")
+          .map((value: string) => value.trim())
+          .filter(Boolean)
+      : []
+
+    return hasSourceText && hasTopic && hasMaterial && targetClassIds.length > 0
+  })
+
+  const blockedDocuments = documents.filter((documentRow: any) => !aiReadyDocuments.includes(documentRow))
+
+  const activityConstraints = schoolId
+    ? [where("school_id", "==", schoolId), orderBy("created_at", "desc"), limit(80)]
+    : [where("actor_id", "==", userId), where("school_id", "==", null), orderBy("created_at", "desc"), limit(80)]
+
+  const activityEvents = await queryDocs(db, "activity_events", ...activityConstraints)
+
+  const normalizeEventText = (value: string) => value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+
+  const courseRegenerations = activityEvents.filter((event: any) => {
+    const text = normalizeEventText(typeof event.payload?.text === "string" ? event.payload.text : "")
+    return text.includes("exercices ia regeneres")
+  }).length
+
+  const ocrSessions = activityEvents.filter((event: any) => {
+    const text = normalizeEventText(typeof event.payload?.text === "string" ? event.payload.text : "")
+    return text.includes("copie photo")
+  }).length
+
+  const personalizedRows = await queryDocs(
+    db,
+    "personalized_exercises",
+    where("created_by", "==", userId),
+    limit(800),
+  )
+
+  const scopedPersonalizedRows = schoolId
+    ? personalizedRows.filter((row: any) => row.school_id === schoolId)
+    : personalizedRows
+
+  const courseExercises = scopedPersonalizedRows
+    .filter((row: any) => (row.source_kind || "") === "course_document")
+    .length
+
+  const personalizedExercises = scopedPersonalizedRows
+    .filter((row: any) => !!row.source_submission_id && (row.source_kind || "") !== "course_document")
+    .length
+
+  const flashcards = await queryDocs(
+    db,
+    "flashcards",
+    where("generated_by", "==", userId),
+    where("source_kind", "==", "teacher_correction"),
+    limit(800),
+  )
+
+  const flashcardsGenerated = schoolId
+    ? flashcards.filter((row: any) => row.school_id === schoolId).length
+    : flashcards.length
+
+  const recentActivity = activityEvents.slice(0, 8).map((event: any) => ({
+    text: event.payload?.text || `Evenement: ${(event.event_type || "").replaceAll("_", " ")}`,
+    time: toDate(event.created_at)?.toLocaleString("fr-FR") || "-",
+    type: event.event_type || "event",
+  }))
+
+  const priorityQueue: Array<{
+    id: string
+    title: string
+    detail: string
+    href: string
+    priority: "high" | "medium" | "low"
+  }> = []
+
+  for (const submission of pendingSubmissions.slice(0, 4)) {
+    const assignment = assignmentById.get(submission.assignment_id)
+    const classId = assignment?.class_id || null
+    const className = classId ? classNameById.get(classId) || "Classe" : "Classe"
+    const studentName = profileById.get(submission.student_id)?.full_name || "Eleve"
+    const submittedAt = toDate(submission.submitted_at)
+    const ageHours = submittedAt ? (Date.now() - submittedAt.getTime()) / (1000 * 60 * 60) : 0
+
+    priorityQueue.push({
+      id: `submission:${submission.id}`,
+      title: `${studentName} - ${assignment?.title || "Travail"}`,
+      detail: `${className} · soumission ${toLocaleDateFR(submission.submitted_at)}`,
+      href: "/teacher/work",
+      priority: ageHours >= 72 ? "high" : ageHours >= 24 ? "medium" : "low",
+    })
+  }
+
+  for (const documentRow of blockedDocuments.slice(0, 2)) {
+    const hasSourceText = typeof documentRow.course_source_text === "string"
+      && documentRow.course_source_text.trim().length > 0
+
+    priorityQueue.push({
+      id: `document:${documentRow.id}`,
+      title: `Document a completer - ${documentRow.name || "Document"}`,
+      detail: hasSourceText
+        ? "Classes cibles manquantes pour la generation IA"
+        : "Texte source manquant pour la generation IA",
+      href: "/teacher/documents",
+      priority: hasSourceText ? "medium" : "high",
+    })
+  }
+
+  const fragileClass = classHealth.find((classRow) => classRow.assignments > 0 && classRow.submissionRate < 60)
+  if (fragileClass) {
+    priorityQueue.push({
+      id: `class:${fragileClass.id}`,
+      title: `Classe a relancer - ${fragileClass.name}`,
+      detail: `Taux de remise ${fragileClass.submissionRate}% · ${fragileClass.pending} correction(s) en attente`,
+      href: `/teacher/classes/${fragileClass.id}`,
+      priority: "medium",
+    })
+  }
 
   return {
-    classCards,
-    totalStudents: classCards.reduce((sum: number, c: any) => sum + c.students, 0),
-    activeClasses: classCards.length,
-    pendingReviews: pending,
-    overallAvg,
+    summary: {
+      totalStudents: classHealth.reduce((sum: number, classRow: any) => sum + classRow.students, 0),
+      activeClasses: classHealth.length,
+      pendingReviews: pending,
+      overallAvg,
+      documentsReady: aiReadyDocuments.length,
+      documentsBlocked: blockedDocuments.length,
+    },
+    classHealth,
+    priorityQueue: priorityQueue.slice(0, 8),
+    aiImpact: {
+      courseExercises,
+      courseRegenerations,
+      personalizedExercises,
+      flashcards: flashcardsGenerated,
+      ocrSessions,
+    },
+    recentActivity,
   }
 }
 
@@ -1250,39 +1466,209 @@ export async function fetchStudentDashboardData(db: Firestore, userId: string, s
     "class_enrollments",
     where("student_id", "==", userId),
     where("status", "==", "active"),
-    limit(1),
   )
 
-  const classId = enrollments[0]?.class_id || null
+  const enrolledClassIds = Array.from(
+    new Set(
+      enrollments
+        .map((enrollment: any) => enrollment.class_id)
+        .filter((value: unknown): value is string => typeof value === "string" && value.trim().length > 0),
+    ),
+  )
 
-  let upcoming: any[] = []
-  if (classId) {
-    upcoming = await queryDocs(db, "assignments", where("class_id", "==", classId), orderBy("due_at", "asc"), limit(8))
-  }
-
-  const upcomingIds = upcoming.map((u: any) => u.id)
-  let upcomingShares: any[] = []
-  if (upcomingIds.length) {
-    for (const batch of batchIds(upcomingIds)) {
-      const constraints: any[] = [where("assignment_id", "in", batch)]
+  let classes: any[] = []
+  if (enrolledClassIds.length) {
+    for (const batch of batchIds(enrolledClassIds)) {
+      const constraints: any[] = [where("__name__", "in", batch), where("archived_at", "==", null)]
       if (schoolId) constraints.push(where("school_id", "==", schoolId))
-      const s = await queryDocs(db, "document_shares", ...constraints)
-      upcomingShares.push(...s)
+      const rows = await queryDocs(db, "classes", ...constraints)
+      classes.push(...rows)
     }
   }
 
-  const assignmentIdsWithDocuments = new Set(upcomingShares.map((share: any) => share.assignment_id))
+  const activeClassIds = classes.map((classRow: any) => classRow.id)
+
+  let assignments: any[] = []
+  if (activeClassIds.length) {
+    for (const batch of batchIds(activeClassIds)) {
+      const rows = await queryDocs(
+        db,
+        "assignments",
+        where("class_id", "in", batch),
+        where("is_published", "==", true),
+        orderBy("due_at", "asc"),
+      )
+      assignments.push(...rows)
+    }
+  }
+
+  assignments = assignments
+    .filter((assignment: any) => !schoolId || assignment.school_id === schoolId)
+    .sort((left: any, right: any) => {
+      const leftDate = toDate(left.due_at)?.getTime() || Number.MAX_SAFE_INTEGER
+      const rightDate = toDate(right.due_at)?.getTime() || Number.MAX_SAFE_INTEGER
+      return leftDate - rightDate
+    })
+
+  const assignmentIds = assignments.map((assignment: any) => assignment.id)
+
+  let submissions: any[] = []
+  if (assignmentIds.length) {
+    for (const batch of batchIds(assignmentIds)) {
+      const rows = await queryDocs(
+        db,
+        "submissions",
+        where("student_id", "==", userId),
+        where("assignment_id", "in", batch),
+      )
+      submissions.push(...rows)
+    }
+  }
+
+  const submissionByAssignmentId = new Map<string, any>()
+  for (const submission of submissions) {
+    submissionByAssignmentId.set(submission.assignment_id, submission)
+  }
+
+  let assignmentShares: any[] = []
+  if (assignmentIds.length) {
+    for (const batch of batchIds(assignmentIds)) {
+      const constraints: any[] = [where("assignment_id", "in", batch)]
+      if (schoolId) constraints.push(where("school_id", "==", schoolId))
+      const rows = await queryDocs(db, "document_shares", ...constraints)
+      assignmentShares.push(...rows)
+    }
+  }
+
+  const assignmentIdsWithDocuments = new Set(
+    assignmentShares
+      .map((share: any) => share.assignment_id)
+      .filter((value: unknown): value is string => typeof value === "string"),
+  )
+
+  const pendingAssignments = assignments.filter((assignment: any) => {
+    const submission = submissionByAssignmentId.get(assignment.id)
+    return !submission || submission.status !== "graded"
+  })
+
+  const assignmentTab = (type: string) => {
+    const key = (type || "").toLowerCase()
+    if (key === "reading") return "reading"
+    if (key === "writing" || key === "project") return "writing"
+    return "quiz"
+  }
+
+  const personalizedConstraints: any[] = [where("student_id", "==", userId), orderBy("created_at", "desc")]
+  if (schoolId) personalizedConstraints.push(where("school_id", "==", schoolId))
+  const personalized = await queryDocs(db, "personalized_exercises", ...personalizedConstraints)
+
+  const isCourseExercise = (row: any) => {
+    const sourceKind = typeof row.source_kind === "string" ? row.source_kind.trim().toLowerCase() : ""
+    if (sourceKind === "course_document") return true
+    if (typeof row.source_document_id === "string" && row.source_document_id.trim().length > 0) return true
+    if (typeof row.source_topic === "string" && row.source_topic.trim().length > 0) return true
+    return false
+  }
+
+  const courseExercises = personalized.filter((row: any) => isCourseExercise(row))
+  const remediationExercises = personalized.filter((row: any) => !isCourseExercise(row))
+
+  const pendingCourseExercises = courseExercises.filter((row: any) => !row.is_completed)
+  const pendingRemediationExercises = remediationExercises.filter((row: any) => !row.is_completed)
+
+  const topicProgressMap = new Map<string, { topicLabel: string; completed: number; total: number }>()
+  for (const topic of COURSE_TOPIC_OPTIONS) {
+    topicProgressMap.set(topic.value, {
+      topicLabel: topic.label,
+      completed: 0,
+      total: 0,
+    })
+  }
+  topicProgressMap.set("other", {
+    topicLabel: "Autres",
+    completed: 0,
+    total: 0,
+  })
+
+  for (const exercise of courseExercises) {
+    const topicKey = parseCourseTopic(exercise.source_topic) || "other"
+    const row = topicProgressMap.get(topicKey) || {
+      topicLabel: "Autres",
+      completed: 0,
+      total: 0,
+    }
+    row.total += 1
+    if (exercise.is_completed) {
+      row.completed += 1
+    }
+    topicProgressMap.set(topicKey, row)
+  }
+
+  const moduleProgress = Array.from(topicProgressMap.entries())
+    .map(([topicKey, row]) => ({
+      topicKey,
+      topicLabel: row.topicLabel,
+      completed: row.completed,
+      total: row.total,
+      pending: Math.max(0, row.total - row.completed),
+    }))
+    .filter((row) => row.total > 0)
+
+  const progressSnap = await getDoc(doc(db, "flashcard_progress", userId))
+  const progressRow = progressSnap.exists() ? progressSnap.data() : null
+  const fallbackLevel = "B1"
+
+  const adaptiveMastery = {
+    levels: {
+      vocabulary: typeof progressRow?.levels?.vocabulary === "string"
+        ? progressRow.levels.vocabulary.toUpperCase()
+        : fallbackLevel,
+      grammar: typeof progressRow?.levels?.grammar === "string"
+        ? progressRow.levels.grammar.toUpperCase()
+        : fallbackLevel,
+      tense: typeof progressRow?.levels?.tense === "string"
+        ? progressRow.levels.tense.toUpperCase()
+        : fallbackLevel,
+    },
+    streaks: {
+      vocabulary: typeof progressRow?.streaks?.vocabulary === "number" ? progressRow.streaks.vocabulary : 0,
+      grammar: typeof progressRow?.streaks?.grammar === "number" ? progressRow.streaks.grammar : 0,
+      tense: typeof progressRow?.streaks?.tense === "number" ? progressRow.streaks.tense : 0,
+    },
+    deckCount: 0,
+  }
+
+  const learningFlashcards = await queryDocs(
+    db,
+    "flashcards",
+    where("student_id", "==", userId),
+    where("status", "==", "learning"),
+    limit(100),
+  )
+
+  adaptiveMastery.deckCount = learningFlashcards
+    .filter((row: any) => row.source_kind === "adaptive_level")
+    .length
 
   const history = await queryDocs(
     db,
     "score_history",
     where("user_id", "==", userId),
     orderBy("month_date", "desc"),
-    limit(1),
+    limit(2),
   )
 
   const xp = await queryDocs(db, "user_xp_events", where("user_id", "==", userId))
   const badges = await queryDocs(db, "user_badges", where("user_id", "==", userId))
+
+  const thisWeekStart = new Date()
+  thisWeekStart.setDate(thisWeekStart.getDate() - 7)
+  const weekXp = xp
+    .filter((row: any) => {
+      const date = toDate(row.created_at)
+      return date && date >= thisWeekStart
+    })
+    .reduce((sum: number, row: any) => sum + (row.points || 0), 0)
 
   const skillRows = await queryDocs(
     db,
@@ -1291,12 +1677,11 @@ export async function fetchStudentDashboardData(db: Firestore, userId: string, s
     orderBy("as_of_date", "desc"),
   )
 
-  // Fetch skill labels
-  const skillIds = Array.from(new Set(skillRows.map((r: any) => r.skill_id)))
+  const skillIds = Array.from(new Set(skillRows.map((row: any) => row.skill_id)))
   const skillMap = new Map<string, any>()
-  for (const sid of skillIds) {
-    const skillSnap = await getDoc(doc(db, "skills", sid))
-    if (skillSnap.exists()) skillMap.set(sid, skillSnap.data())
+  for (const skillId of skillIds) {
+    const skillSnap = await getDoc(doc(db, "skills", skillId))
+    if (skillSnap.exists()) skillMap.set(skillId, skillSnap.data())
   }
 
   const uniqueSkills = new Map<string, any>()
@@ -1305,31 +1690,171 @@ export async function fetchStudentDashboardData(db: Firestore, userId: string, s
     if (!uniqueSkills.has(key)) uniqueSkills.set(key, row)
   }
 
-  const thisWeekStart = new Date()
-  thisWeekStart.setDate(thisWeekStart.getDate() - 7)
-  const weekXp = xp
-    .filter((r: any) => {
-      const d = toDate(r.created_at)
-      return d && d >= thisWeekStart
+  const gradedSubmissions = submissions
+    .filter((submission: any) => submission.status === "graded")
+    .sort((left: any, right: any) => {
+      const leftDate = toDate(left.graded_at)?.getTime() || 0
+      const rightDate = toDate(right.graded_at)?.getTime() || 0
+      return rightDate - leftDate
     })
-    .reduce((sum: number, r: any) => sum + (r.points || 0), 0)
+
+  const assignmentById = new Map(assignments.map((assignment: any) => [assignment.id, assignment]))
+  const latestGradeSubmission = gradedSubmissions[0] || null
+  const latestGradeAssignment = latestGradeSubmission
+    ? assignmentById.get(latestGradeSubmission.assignment_id)
+    : null
+
+  const feedbackConstraints: any[] = [
+    where("student_id", "==", userId),
+    orderBy("created_at", "desc"),
+    limit(1),
+  ]
+  if (schoolId) feedbackConstraints.push(where("school_id", "==", schoolId))
+  const feedbackRows = await queryDocs(db, "teacher_feedback", ...feedbackConstraints)
+
+  let feedbackTeacherName: string | null = null
+  if (feedbackRows[0]?.teacher_id) {
+    const teacherSnap = await getDoc(doc(db, "profiles", feedbackRows[0].teacher_id))
+    feedbackTeacherName = teacherSnap.exists() ? teacherSnap.data()?.full_name || null : null
+  }
+
+  const toDateKey = (date: Date) => date.toISOString().slice(0, 10)
+  const today = new Date()
+  const todayKey = toDateKey(today)
+  const practiceStart = new Date(today)
+  practiceStart.setDate(practiceStart.getDate() - 13)
+
+  const practiceRows = await queryDocs(
+    db,
+    "practice_daily",
+    where("user_id", "==", userId),
+    where("practice_date", ">=", toDateKey(practiceStart)),
+    where("practice_date", "<=", todayKey),
+  )
+
+  const activePracticeDates = new Set(
+    practiceRows
+      .filter((row: any) => {
+        const count = typeof row.completed_count === "number" ? row.completed_count : 0
+        const status = typeof row.status === "string" ? row.status : ""
+        return count > 0 || status === "partial" || status === "full"
+      })
+      .map((row: any) => String(row.practice_date)),
+  )
+
+  let currentStreak = 0
+  for (let offset = 0; offset < 45; offset += 1) {
+    const day = new Date(today)
+    day.setDate(day.getDate() - offset)
+    const key = toDateKey(day)
+    if (activePracticeDates.has(key)) {
+      currentStreak += 1
+      continue
+    }
+    break
+  }
+
+  const missionQueue: Array<{
+    id: string
+    title: string
+    subtitle: string
+    href: string
+    urgent: boolean
+    kind: "course" | "assignment" | "flashcards" | "remediation"
+  }> = []
+
+  if (pendingCourseExercises.length) {
+    missionQueue.push({
+      id: "course-exercises",
+      title: `${pendingCourseExercises.length} exercice(s) de cours a terminer`,
+      subtitle: "Poursuis les modules du topic en melangeant comprehension, vocabulaire et structure.",
+      href: "/student/course-exercises",
+      urgent: pendingCourseExercises.length >= 3,
+      kind: "course",
+    })
+  }
+
+  for (const assignment of pendingAssignments.slice(0, 3)) {
+    const dueDate = toDate(assignment.due_at)
+    missionQueue.push({
+      id: `assignment:${assignment.id}`,
+      title: assignment.title || "Devoir",
+      subtitle: dueDate
+        ? `Echeance ${dueDate.toLocaleDateString("fr-FR")}${assignmentIdsWithDocuments.has(assignment.id) ? " · document joint" : ""}`
+        : `Sans date limite${assignmentIdsWithDocuments.has(assignment.id) ? " · document joint" : ""}`,
+      href: `/student/exercises?tab=${assignmentTab(assignment.type || "quiz")}&assignment=${assignment.id}`,
+      urgent: !!dueDate && dueDate.getTime() - Date.now() < 1000 * 60 * 60 * 48,
+      kind: "assignment",
+    })
+  }
+
+  if (pendingRemediationExercises.length) {
+    missionQueue.push({
+      id: "remediation",
+      title: `${pendingRemediationExercises.length} exercice(s) personnalise(s) a finaliser`,
+      subtitle: "Consolide les points de correction donnes par ton enseignant.",
+      href: "/student/exercises?tab=personalized",
+      urgent: pendingRemediationExercises.length >= 2,
+      kind: "remediation",
+    })
+  }
+
+  if (adaptiveMastery.deckCount > 0) {
+    missionQueue.push({
+      id: "flashcards",
+      title: `${adaptiveMastery.deckCount} flashcard(s) adaptative(s) active(s)`,
+      subtitle: "Fais une serie pour monter de niveau sur vocabulaire, grammaire et temps.",
+      href: "/student/flashcards",
+      urgent: adaptiveMastery.deckCount >= 12,
+      kind: "flashcards",
+    })
+  }
+
+  if (!missionQueue.length) {
+    missionQueue.push({
+      id: "revision",
+      title: "Aucune urgence - lance une session de revision",
+      subtitle: "Choisis un topic, revise les documents puis enchaine sur les flashcards.",
+      href: "/student/documents",
+      urgent: false,
+      kind: "course",
+    })
+  }
 
   return {
     overallScore: Math.round(history[0]?.overall_score || 0),
+    overallTrend: history.length > 1 ? Math.round((history[0]?.overall_score || 0) - (history[1]?.overall_score || 0)) : 0,
     xpWeek: weekXp,
     badgeCount: badges.length,
-    lessonsDone: 0,
-    upcomingWork: upcoming.map((u: any) => ({
-      id: u.id,
-      title: u.title,
-      due: u.due_at ? toDate(u.due_at)?.toLocaleDateString("fr-FR") || "Pas de date limite" : "Pas de date limite",
-      type: (u.type || "exercice").toString(),
-      urgent: !!u.due_at && (toDate(u.due_at)?.getTime() || 0) - Date.now() < 1000 * 60 * 60 * 24 * 2,
-      hasDocuments: assignmentIdsWithDocuments.has(u.id),
-    })),
-    skills: Array.from(uniqueSkills.values()).slice(0, 5).map((r: any) => ({
-      label: skillMap.get(r.skill_id)?.label || "Compétence",
-      score: Math.round(r.score || 0),
+    lessonsDone: courseExercises.filter((row: any) => !!row.is_completed).length,
+    missionQueue,
+    moduleProgress,
+    adaptiveMastery,
+    feedbackLoop: {
+      latestGrade: latestGradeSubmission
+        ? {
+            title: latestGradeAssignment?.title || "Devoir",
+            score: typeof latestGradeSubmission.score === "number" ? Math.round(latestGradeSubmission.score) : 0,
+            date: toLocaleDateFR(latestGradeSubmission.graded_at || latestGradeSubmission.submitted_at),
+            feedback: typeof latestGradeSubmission.feedback === "string" ? latestGradeSubmission.feedback : "",
+          }
+        : null,
+      latestTeacherFeedback: feedbackRows[0]
+        ? {
+            teacher: feedbackTeacherName || "Enseignant",
+            date: toLocaleDateFR(feedbackRows[0].created_at),
+            text: typeof feedbackRows[0].feedback === "string" ? feedbackRows[0].feedback : "",
+          }
+        : null,
+      pendingRemediation: pendingRemediationExercises.length,
+    },
+    momentum: {
+      activeDays14: activePracticeDates.size,
+      currentStreak,
+    },
+    skills: Array.from(uniqueSkills.values()).slice(0, 5).map((row: any) => ({
+      label: skillMap.get(row.skill_id)?.label || "Competence",
+      score: Math.round(row.score || 0),
     })),
   }
 }

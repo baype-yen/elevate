@@ -15,6 +15,7 @@ Contraintes obligatoires:
   - 2 questions "single_choice" (QCM a choix unique)
   - 2 questions "short_answer" (reponse courte redigee par l'eleve)
 - Chaque question "single_choice" doit fournir 3 ou 4 options plausibles.
+- Chaque question doit inclure un champ "hint" en francais (1 phrase) qui aide sans donner la reponse exacte.
 - N'ecris pas de correction ni de "bonne reponse" dans la sortie.
 - Le contenu anglais doit rester simple, utile et coherent avec le sujet du document.
 - Le niveau CECRL doit etre respecte strictement.
@@ -32,12 +33,14 @@ Format de sortie JSON uniquement:
         {
           "id": "q1",
           "prompt": "...",
+          "hint": "...",
           "question_type": "single_choice",
           "options": ["...", "...", "..."]
         },
         {
           "id": "q2",
           "prompt": "...",
+          "hint": "...",
           "question_type": "short_answer"
         }
       ]
@@ -51,6 +54,7 @@ type NormalizedQuestion = {
   id: string
   prompt: string
   question_type: "single_choice" | "short_answer"
+  hint?: string
   options?: string[]
 }
 
@@ -352,12 +356,71 @@ function uniqueOptions(options: unknown): string[] {
   return rows
 }
 
+function normalizeHintText(value: string) {
+  return (value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+}
+
+function sanitizeHint(value: unknown) {
+  if (typeof value !== "string") return ""
+  const normalized = value.replace(/\s+/g, " ").trim()
+  if (normalized.length < 8) return ""
+  return normalized.slice(0, 220)
+}
+
+function fallbackHintForQuestion(
+  prompt: string,
+  questionType: NormalizedQuestion["question_type"],
+  exerciseType: CourseExerciseContent["exercise_type"],
+) {
+  const normalizedPrompt = normalizeHintText(prompt)
+
+  if (/pronom relatif|clause relative|relative/.test(normalizedPrompt)) {
+    return "Rappel: who = personne, which = chose. Verifie le mot remplace et le verbe qui suit."
+  }
+
+  if (/modal|modaux|possibilit|can|could|may|might/.test(normalizedPrompt)) {
+    return "Repere le sens attendu: capacite, possibilite ou permission, puis choisis le modal adapte."
+  }
+
+  if (/combinez|combine|reecri|reformule|transform/.test(normalizedPrompt)) {
+    return "Conserve les deux idees de depart, puis relie-les avec une structure grammaticale correcte."
+  }
+
+  if (/temps verbal|conjug|preterit|present perfect|past|future/.test(normalizedPrompt) || exerciseType === "conjugation") {
+    return "Trouve d'abord le repere de temps, puis accorde le verbe avec le sujet."
+  }
+
+  if (exerciseType === "grammar") {
+    return "Relis la structure complete (sujet, verbe, complement) et verifie la regle ciblee."
+  }
+
+  if (exerciseType === "vocabulary") {
+    return "Choisis le mot qui colle au contexte, pas seulement a une traduction litterale."
+  }
+
+  if (exerciseType === "reading") {
+    return "Reviens au document et appuie-toi sur un detail precis pour confirmer ta reponse."
+  }
+
+  if (questionType === "single_choice") {
+    return "Lis toutes les options puis elimine d'abord celles qui ne respectent pas la consigne."
+  }
+
+  return "Ecris une reponse courte, claire et complete en anglais, avec au moins un mot du cours."
+}
+
 function toNormalizedQuestion(
   question: CourseExerciseQuestionContent,
   index: number,
+  exerciseType: CourseExerciseContent["exercise_type"],
 ): NormalizedQuestion | null {
   const prompt = (question.prompt || "").trim()
   if (prompt.length < 8) return null
+  const hint = sanitizeHint(question.hint)
+    || fallbackHintForQuestion(prompt, question.question_type, exerciseType)
 
   if (question.question_type === "single_choice") {
     const options = uniqueOptions(question.options)
@@ -366,6 +429,7 @@ function toNormalizedQuestion(
     return {
       id: `q${index + 1}`,
       prompt,
+      hint,
       question_type: "single_choice",
       options: options.slice(0, 4),
     }
@@ -374,6 +438,7 @@ function toNormalizedQuestion(
   return {
     id: `q${index + 1}`,
     prompt,
+    hint,
     question_type: "short_answer",
   }
 }
@@ -381,7 +446,7 @@ function toNormalizedQuestion(
 function ensureStructuredQuestions(exercise: CourseExerciseContent): NormalizedQuestion[] {
   const rawQuestions = Array.isArray(exercise.questions) ? exercise.questions : []
   const normalized = rawQuestions
-    .map((question, index) => toNormalizedQuestion(question, index))
+    .map((question, index) => toNormalizedQuestion(question, index, exercise.exercise_type))
     .filter((question): question is NormalizedQuestion => !!question)
 
   const fallback = buildFallbackStructuredQuestions(exercise.exercise_type)
@@ -406,10 +471,14 @@ function ensureStructuredQuestions(exercise: CourseExerciseContent): NormalizedQ
   }
 
   const questions = normalized.slice(0, 6).map((question, index) => {
+    const hint = sanitizeHint(question.hint)
+      || fallbackHintForQuestion(question.prompt, question.question_type, exercise.exercise_type)
+
     if (question.question_type === "single_choice") {
       return {
         id: `q${index + 1}`,
         prompt: question.prompt,
+        hint,
         question_type: question.question_type,
         options: question.options?.slice(0, 4),
       }
@@ -418,6 +487,7 @@ function ensureStructuredQuestions(exercise: CourseExerciseContent): NormalizedQ
     return {
       id: `q${index + 1}`,
       prompt: question.prompt,
+      hint,
       question_type: question.question_type,
     }
   })
@@ -426,7 +496,10 @@ function ensureStructuredQuestions(exercise: CourseExerciseContent): NormalizedQ
   const shortAnswerCount = questions.filter((question) => question.question_type === "short_answer").length
 
   if (!singleChoiceCount || !shortAnswerCount) {
-    return buildFallbackStructuredQuestions(exercise.exercise_type)
+    return buildFallbackStructuredQuestions(exercise.exercise_type).map((question) => ({
+      ...question,
+      hint: fallbackHintForQuestion(question.prompt, question.question_type, exercise.exercise_type),
+    }))
   }
 
   return questions
@@ -455,6 +528,7 @@ function buildPrompt(input: GenerateCourseExercisesInput): string {
     "- Donne des consignes claires et actionnables.",
     "- Dans chaque exercice, genere 4 questions melangees: 2 single_choice + 2 short_answer.",
     "- Pour chaque question single_choice, fournis 3 ou 4 options.",
+    "- Pour chaque question, ajoute un champ hint en francais (1 phrase) sans donner la reponse.",
     "- Equilibre comprehension, vocabulaire et grammaire selon le document.",
     "- Si le document est lexical, privilegie vocabulaire + reutilisation en phrase.",
     "- Si le document est sur la conjugaison, privilegie les temps verbaux et les transformations de phrases.",

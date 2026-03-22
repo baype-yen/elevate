@@ -4,6 +4,7 @@ import Link from "next/link"
 import { useEffect, useMemo, useState } from "react"
 import { collection, addDoc, doc, updateDoc, serverTimestamp } from "firebase/firestore"
 import { ElevateButton, LevelBadge } from "@/components/elevate/shared"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { db } from "@/lib/firebase/client"
 import { useAppContext } from "@/hooks/use-app-context"
 import { fetchStudentExercisesData } from "@/lib/firebase/client-data"
@@ -20,6 +21,7 @@ type CourseExerciseQuestionType = "single_choice" | "short_answer"
 type CourseExerciseQuestion = {
   id: string
   prompt: string
+  hint?: string
   questionType: CourseExerciseQuestionType
   options: string[]
 }
@@ -46,6 +48,16 @@ type CourseExerciseRow = {
   questions: CourseExerciseQuestion[]
 }
 
+type CourseModuleBucket = "comprehension" | "vocabulary" | "structure" | "consolidation"
+
+type CourseTopicModule = {
+  id: string
+  title: string
+  subtitle: string
+  exercises: CourseExerciseRow[]
+  completedCount: number
+}
+
 function levelColorClass(level: string) {
   if (level === "C1" || level === "C2") return "watermelon"
   if (level === "B1" || level === "B2") return "abricot"
@@ -60,6 +72,151 @@ function typeLabel(type: string) {
   if (key === "grammar") return "Grammaire"
   if (key === "mixed") return "Mixte"
   return "Exercice"
+}
+
+const MODULE_BLUEPRINTS: Array<{ title: string; subtitle: string }> = [
+  {
+    title: "Module 1 - Comprehension du cours",
+    subtitle: "Comprendre le fond, puis verifier le vocabulaire et les structures.",
+  },
+  {
+    title: "Module 2 - Entrainement guide",
+    subtitle: "Reutiliser les notions sur des questions variees et progressives.",
+  },
+  {
+    title: "Module 3 - Consolidation active",
+    subtitle: "Melanger les competences pour gagner en autonomie.",
+  },
+  {
+    title: "Module 4 - Defi final",
+    subtitle: "Valider les acquis sur un bloc mixte proche de l'evaluation.",
+  },
+]
+
+const MODULE_THEME_ROTATION = [
+  {
+    panel: "border-navy/30 bg-navy/5",
+    badge: "bg-navy text-white",
+  },
+  {
+    panel: "border-abricot/35 bg-abricot/10",
+    badge: "bg-abricot text-navy",
+  },
+  {
+    panel: "border-violet/35 bg-violet/10",
+    badge: "bg-violet text-white",
+  },
+  {
+    panel: "border-navy-light/35 bg-navy-light/10",
+    badge: "bg-navy-light text-white",
+  },
+]
+
+function resolveModuleBucket(exercise: CourseExerciseRow): CourseModuleBucket {
+  const materialType = (exercise.materialType || "").toLowerCase()
+  const exerciseType = (exercise.type || "").toLowerCase()
+
+  if (materialType === "text" || exerciseType === "reading") {
+    return "comprehension"
+  }
+
+  if (materialType === "vocabulary" || exerciseType === "vocabulary") {
+    return "vocabulary"
+  }
+
+  if (
+    materialType === "grammar"
+    || materialType === "conjugation"
+    || exerciseType === "grammar"
+    || exerciseType === "conjugation"
+  ) {
+    return "structure"
+  }
+
+  return "consolidation"
+}
+
+function buildTopicModules(rows: CourseExerciseRow[]): CourseTopicModule[] {
+  if (!rows.length) return []
+
+  const byBucket: Record<CourseModuleBucket, CourseExerciseRow[]> = {
+    comprehension: [],
+    vocabulary: [],
+    structure: [],
+    consolidation: [],
+  }
+
+  const sortedRows = [...rows].sort((left, right) => {
+    if (left.isCompleted !== right.isCompleted) {
+      return left.isCompleted ? 1 : -1
+    }
+
+    if (!!left.responseSubmittedAt !== !!right.responseSubmittedAt) {
+      return left.responseSubmittedAt ? 1 : -1
+    }
+
+    return left.title.localeCompare(right.title, "fr")
+  })
+
+  for (const exercise of sortedRows) {
+    byBucket[resolveModuleBucket(exercise)].push(exercise)
+  }
+
+  const bucketOrder: CourseModuleBucket[] = [
+    "comprehension",
+    "vocabulary",
+    "structure",
+    "consolidation",
+  ]
+
+  const totalRemaining = () => bucketOrder.reduce((sum, bucket) => sum + byBucket[bucket].length, 0)
+
+  const modules: CourseTopicModule[] = []
+  let moduleIndex = 0
+
+  while (totalRemaining() > 0) {
+    const moduleExercises: CourseExerciseRow[] = []
+
+    for (const bucket of bucketOrder) {
+      const nextExercise = byBucket[bucket].shift()
+      if (!nextExercise) continue
+      moduleExercises.push(nextExercise)
+    }
+
+    while (moduleExercises.length < 4 && totalRemaining() > 0) {
+      const candidateBucket = bucketOrder
+        .filter((bucket) => byBucket[bucket].length > 0)
+        .sort((left, right) => {
+          const countGap = byBucket[right].length - byBucket[left].length
+          if (countGap !== 0) return countGap
+          return bucketOrder.indexOf(left) - bucketOrder.indexOf(right)
+        })[0]
+
+      if (!candidateBucket) break
+
+      const nextExercise = byBucket[candidateBucket].shift()
+      if (!nextExercise) break
+
+      moduleExercises.push(nextExercise)
+    }
+
+    const blueprint = MODULE_BLUEPRINTS[moduleIndex] || {
+      title: `Module ${moduleIndex + 1} - Pratique complementaire`,
+      subtitle: "Continuer la progression sur un mix d'exercices cibles.",
+    }
+
+    modules.push({
+      id: `module-${moduleIndex + 1}`,
+      title: blueprint.title,
+      subtitle: blueprint.subtitle,
+      exercises: moduleExercises,
+      completedCount: moduleExercises.filter((exercise) => exercise.isCompleted).length,
+    })
+
+    moduleIndex += 1
+  }
+
+  return modules
 }
 
 function hasExplicitQuestions(instructions: string) {
@@ -293,6 +450,7 @@ function normalizeQuestions(rawQuestions: unknown): CourseExerciseQuestion[] {
 
     const prompt = typeof (raw as any).prompt === "string" ? (raw as any).prompt.trim() : ""
     if (prompt.length < 6) continue
+    const hint = typeof (raw as any).hint === "string" ? (raw as any).hint.trim() : ""
 
     const questionType = (raw as any).questionType === "single_choice" || (raw as any).question_type === "single_choice"
       ? "single_choice"
@@ -317,6 +475,7 @@ function normalizeQuestions(rawQuestions: unknown): CourseExerciseQuestion[] {
     normalized.push({
       id: normalizeQuestionId((raw as any).id, index),
       prompt,
+      hint,
       questionType,
       options: options.slice(0, 5),
     })
@@ -357,6 +516,55 @@ function resolvedInstructions(exercise: CourseExerciseRow) {
   }
 
   return `${instructions}\n\nRepondez directement aux questions ci-dessous.`
+}
+
+function normalizeHintText(value: string) {
+  return (value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+}
+
+function questionHint(exercise: CourseExerciseRow, question: CourseExerciseQuestion) {
+  const explicitHint = typeof question.hint === "string" ? question.hint.trim() : ""
+  if (explicitHint.length >= 8) return explicitHint
+
+  const prompt = normalizeHintText(question.prompt)
+  const type = (exercise.materialType || exercise.type || "").toLowerCase()
+
+  if (/pronom relatif|clause relative|relative/.test(prompt)) {
+    return "Rappel: who = personne, which = chose. Verifie le mot remplace et le verbe qui suit."
+  }
+
+  if (/modal|modaux|possibilit|can|could|may|might/.test(prompt)) {
+    return "Repere le sens attendu: capacite, possibilite ou permission, puis choisis le modal adapte."
+  }
+
+  if (/combinez|combine|reecri|reformule|transform/.test(prompt)) {
+    return "Conserve les deux idees de depart, puis relie-les avec une structure grammaticale correcte."
+  }
+
+  if (/temps verbal|conjug|preterit|present perfect|past|future/.test(prompt) || type === "conjugation") {
+    return "Trouve d'abord le repere de temps, puis accorde le verbe avec le sujet."
+  }
+
+  if (type === "grammar") {
+    return "Relis la structure complete (sujet, verbe, complement) et verifie la regle de grammaire ciblee."
+  }
+
+  if (type === "vocabulary") {
+    return "Choisis le mot qui colle au contexte de la phrase, pas seulement a une traduction litterale."
+  }
+
+  if (type === "reading") {
+    return "Reviens au document source et appuie-toi sur un detail precis pour valider ta reponse."
+  }
+
+  if (question.questionType === "single_choice") {
+    return "Lis chaque option jusqu'au bout et elimine d'abord celles qui ne respectent pas la consigne."
+  }
+
+  return "Ecris une reponse courte, claire et complete en anglais, avec au moins un mot du cours."
 }
 
 function isCourseExerciseCandidate(exercise: any) {
@@ -488,6 +696,19 @@ export default function StudentCourseExercisesPage() {
 
     return map
   }, [exercises])
+
+  const groupedTopicModules = useMemo(() => {
+    const map = new Map<string, CourseTopicModule[]>()
+
+    for (const topic of COURSE_TOPIC_OPTIONS) {
+      const rows = groupedExercises.get(topic.value) || []
+      map.set(topic.value, buildTopicModules(rows))
+    }
+
+    map.set("other", buildTopicModules(groupedExercises.get("other") || []))
+
+    return map
+  }, [groupedExercises])
 
   const completedCount = useMemo(
     () => exercises.filter((exercise) => exercise.isCompleted).length,
@@ -691,12 +912,35 @@ export default function StudentCourseExercisesPage() {
             <div className="font-sans text-[12px] text-text-mid mb-2">
               Repondez a toutes les questions puis validez vos reponses.
             </div>
+            <div className="font-sans text-[12px] text-text-light mb-2">
+              Survolez ou appuyez sur le I pour voir un indice.
+            </div>
 
             <div className="flex flex-col gap-3">
               {questions.map((question, index) => (
                 <div key={`${exercise.id}:${question.id}`} className="rounded-lg border border-gray-light bg-off-white px-3 py-2.5">
-                  <div className="font-sans text-sm font-semibold text-navy">
-                    {index + 1}. {question.prompt}
+                  <div className="flex items-start gap-2">
+                    <div className="font-sans text-sm font-semibold text-navy flex-1">
+                      {index + 1}. {question.prompt}
+                    </div>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          aria-label="Voir un indice"
+                          className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-navy/35 bg-navy/5 font-sans text-[11px] font-bold text-navy transition-colors hover:bg-navy/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-navy/35"
+                        >
+                          I
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent
+                        side="top"
+                        sideOffset={6}
+                        className="max-w-[290px] rounded-lg bg-navy px-2.5 py-2 text-[12px] leading-relaxed text-white"
+                      >
+                        {questionHint(exercise, question)}
+                      </TooltipContent>
+                    </Tooltip>
                   </div>
 
                   {question.questionType === "single_choice" ? (
@@ -793,6 +1037,10 @@ export default function StudentCourseExercisesPage() {
             )
           })}
         </div>
+
+        <div className="mt-3 font-sans text-[12px] text-text-mid">
+          Chaque topic est organise en modules mixtes: comprehension, vocabulaire, structure et consolidation.
+        </div>
       </div>
 
       {error && <div className="font-sans text-sm text-watermelon">{error}</div>}
@@ -816,15 +1064,54 @@ export default function StudentCourseExercisesPage() {
       )}
 
       {COURSE_TOPIC_OPTIONS.map((topic) => {
-        const rows = groupedExercises.get(topic.value) || []
+        const modules = groupedTopicModules.get(topic.value) || []
+        const topicTotal = modules.reduce((sum, module) => sum + module.exercises.length, 0)
+        const topicCompleted = modules.reduce((sum, module) => sum + module.completedCount, 0)
+
         return (
           <section key={topic.value} className="bg-card rounded-[20px] border border-gray-mid p-6">
-            <h4 className="font-serif text-lg font-bold text-navy mb-3">{topic.label}</h4>
+            <div className="mb-3 flex items-start justify-between gap-3 flex-wrap">
+              <h4 className="font-serif text-lg font-bold text-navy">{topic.label}</h4>
+              {!!topicTotal && (
+                <span className="inline-flex rounded-md border border-gray-mid bg-off-white px-2.5 py-1 font-sans text-[11px] font-semibold text-text-mid">
+                  {topicCompleted}/{topicTotal} termines
+                </span>
+              )}
+            </div>
 
-            <div className="flex flex-col gap-3">
-              {rows.map(renderExerciseCard)}
+            <div className="flex flex-col gap-4">
+              {modules.map((module, index) => {
+                const moduleTheme = MODULE_THEME_ROTATION[index % MODULE_THEME_ROTATION.length]
 
-              {!rows.length && (
+                return (
+                  <div
+                    key={`${topic.value}:${module.id}`}
+                    className={cn("rounded-xl border p-4", moduleTheme.panel)}
+                  >
+                    <div className="mb-3 flex items-start justify-between gap-3 flex-wrap">
+                      <div>
+                        <div className="font-serif text-[17px] font-bold text-navy">{module.title}</div>
+                        <div className="font-sans text-[12px] text-text-mid mt-0.5">{module.subtitle}</div>
+                      </div>
+
+                      <span
+                        className={cn(
+                          "inline-flex rounded-md px-2.5 py-1 font-sans text-[11px] font-semibold",
+                          moduleTheme.badge,
+                        )}
+                      >
+                        {module.completedCount}/{module.exercises.length} termines
+                      </span>
+                    </div>
+
+                    <div className="flex flex-col gap-3">
+                      {module.exercises.map(renderExerciseCard)}
+                    </div>
+                  </div>
+                )
+              })}
+
+              {!modules.length && (
                 <div className="font-sans text-sm text-text-mid">Aucun exercice disponible pour ce topic.</div>
               )}
             </div>
@@ -832,11 +1119,36 @@ export default function StudentCourseExercisesPage() {
         )
       })}
 
-      {!!(groupedExercises.get("other") || []).length && (
+      {!!(groupedTopicModules.get("other") || []).length && (
         <section className="bg-card rounded-[20px] border border-gray-mid p-6">
           <h4 className="font-serif text-lg font-bold text-navy mb-3">Autres exercices</h4>
-          <div className="flex flex-col gap-3">
-            {(groupedExercises.get("other") || []).map(renderExerciseCard)}
+          <div className="flex flex-col gap-4">
+            {(groupedTopicModules.get("other") || []).map((module, index) => {
+              const moduleTheme = MODULE_THEME_ROTATION[index % MODULE_THEME_ROTATION.length]
+
+              return (
+                <div key={`other:${module.id}`} className={cn("rounded-xl border p-4", moduleTheme.panel)}>
+                  <div className="mb-3 flex items-start justify-between gap-3 flex-wrap">
+                    <div>
+                      <div className="font-serif text-[17px] font-bold text-navy">{module.title}</div>
+                      <div className="font-sans text-[12px] text-text-mid mt-0.5">{module.subtitle}</div>
+                    </div>
+                    <span
+                      className={cn(
+                        "inline-flex rounded-md px-2.5 py-1 font-sans text-[11px] font-semibold",
+                        moduleTheme.badge,
+                      )}
+                    >
+                      {module.completedCount}/{module.exercises.length} termines
+                    </span>
+                  </div>
+
+                  <div className="flex flex-col gap-3">
+                    {module.exercises.map(renderExerciseCard)}
+                  </div>
+                </div>
+              )
+            })}
           </div>
         </section>
       )}

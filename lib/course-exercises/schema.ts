@@ -6,6 +6,7 @@ const COURSE_EXERCISE_QUESTION_TYPES = ["single_choice", "short_answer"] as cons
 export const CourseExerciseQuestionSchema = z.object({
   id: z.string().trim().min(1).max(64).optional(),
   prompt: z.string().trim().min(8).max(320),
+  hint: z.string().trim().min(8).max(220).optional(),
   question_type: z.enum(COURSE_EXERCISE_QUESTION_TYPES),
   options: z.array(z.string().trim().min(1).max(180)).min(2).max(6).optional(),
 })
