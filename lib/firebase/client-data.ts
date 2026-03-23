@@ -78,6 +78,13 @@ type CourseExerciseQuestionPayload = {
 
 type CourseExerciseAnswersPayload = Record<string, string>
 
+type CourseExerciseQuestionReviewPayload = {
+  isCorrect: boolean | null
+  comment: string
+}
+
+type CourseExerciseQuestionReviewsPayload = Record<string, CourseExerciseQuestionReviewPayload>
+
 function parseSubmissionPayload(content: any): SubmissionPayload {
   const payload = content && typeof content === "object" ? content : {}
   const text = typeof payload.text === "string" ? payload.text : ""
@@ -116,6 +123,38 @@ function parseCourseExerciseAnswers(payload: any): CourseExerciseAnswersPayload 
   return answers
 }
 
+function parseCourseExerciseQuestionReviews(payload: any): CourseExerciseQuestionReviewsPayload {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return {}
+
+  const reviews: CourseExerciseQuestionReviewsPayload = {}
+
+  for (const [questionId, rawValue] of Object.entries(payload)) {
+    if (typeof questionId !== "string") continue
+    const normalizedQuestionId = questionId.trim()
+    if (!normalizedQuestionId) continue
+    if (!rawValue || typeof rawValue !== "object" || Array.isArray(rawValue)) continue
+
+    const rawIsCorrect = typeof (rawValue as any).is_correct === "boolean"
+      ? (rawValue as any).is_correct
+      : typeof (rawValue as any).isCorrect === "boolean"
+      ? (rawValue as any).isCorrect
+      : null
+
+    const comment = typeof (rawValue as any).comment === "string"
+      ? (rawValue as any).comment.trim()
+      : ""
+
+    if (rawIsCorrect === null && !comment) continue
+
+    reviews[normalizedQuestionId] = {
+      isCorrect: rawIsCorrect,
+      comment,
+    }
+  }
+
+  return reviews
+}
+
 function parseCourseExerciseQuestions(rawQuestions: any): CourseExerciseQuestionPayload[] {
   if (!Array.isArray(rawQuestions)) return []
 
@@ -129,9 +168,15 @@ function parseCourseExerciseQuestions(rawQuestions: any): CourseExerciseQuestion
       : ""
     if (prompt.length < 6) continue
 
-    const questionType = (item as any).question_type === "single_choice"
+    const rawQuestionType = typeof (item as any).question_type === "string"
+      ? (item as any).question_type
+      : typeof (item as any).questionType === "string"
+      ? (item as any).questionType
+      : ""
+
+    const questionType = rawQuestionType === "single_choice"
       ? "single_choice"
-      : (item as any).question_type === "short_answer"
+      : rawQuestionType === "short_answer"
       ? "short_answer"
       : null
 
@@ -1077,6 +1122,293 @@ export async function fetchTeacherWorkData(
   return {
     items,
     classes: classes.map((c: any) => ({ id: c.id, name: c.name })),
+  }
+}
+
+export async function fetchTeacherCourseExercisesData(
+  db: Firestore,
+  userId: string,
+  schoolId: string | null,
+  classId?: string | null,
+) {
+  let classConstraints: any[] = [
+    where("teacher_id", "==", userId),
+    where("archived_at", "==", null),
+  ]
+
+  if (schoolId) classConstraints.push(where("school_id", "==", schoolId))
+  else classConstraints.push(where("school_id", "==", null))
+
+  if (classId) classConstraints.push(where("__name__", "==", classId))
+
+  const classes = await queryDocs(db, "classes", ...classConstraints)
+  const classIds = classes.map((classRow: any) => classRow.id)
+
+  if (!classIds.length) {
+    return {
+      items: [] as any[],
+      classes: [] as any[],
+    }
+  }
+
+  const classNameById = new Map(classes.map((classRow: any) => [classRow.id, classRow.name]))
+
+  let enrollments: any[] = []
+  for (const batch of batchIds(classIds)) {
+    const rows = await queryDocs(
+      db,
+      "class_enrollments",
+      where("class_id", "in", batch),
+      where("status", "==", "active"),
+    )
+    enrollments.push(...rows)
+  }
+
+  const defaultClassByStudent = new Map<string, string>()
+  for (const enrollment of enrollments) {
+    const studentId = typeof enrollment.student_id === "string" ? enrollment.student_id : ""
+    const enrolledClassId = typeof enrollment.class_id === "string" ? enrollment.class_id : ""
+    if (!studentId || !enrolledClassId || !classNameById.has(enrolledClassId)) continue
+    if (!defaultClassByStudent.has(studentId)) {
+      defaultClassByStudent.set(studentId, enrolledClassId)
+    }
+  }
+
+  const enrollmentStudentIds = Array.from(defaultClassByStudent.keys())
+
+  let personalizedRows: any[] = []
+  for (const batch of batchIds(classIds)) {
+    const rows = await queryDocs(db, "personalized_exercises", where("class_id", "in", batch))
+    personalizedRows.push(...rows)
+  }
+
+  if (enrollmentStudentIds.length) {
+    for (const batch of batchIds(enrollmentStudentIds)) {
+      const rows = await queryDocs(db, "personalized_exercises", where("student_id", "in", batch))
+      personalizedRows.push(...rows)
+    }
+  }
+
+  const dedupedPersonalized = Array.from(
+    new Map(personalizedRows.map((row: any) => [row.id, row])).values(),
+  )
+
+  const courseRows = dedupedPersonalized.filter((row: any) => {
+    const sourceKind = typeof row.source_kind === "string" ? row.source_kind.trim().toLowerCase() : ""
+    const sourceDocumentId = typeof row.source_document_id === "string" ? row.source_document_id.trim() : ""
+    const topicKey = parseCourseTopic(row.source_topic)
+
+    const isCourseRow = sourceKind === "course_document" || !!sourceDocumentId || !!topicKey
+    if (!isCourseRow) return false
+
+    const studentId = typeof row.student_id === "string" ? row.student_id : ""
+    const rowClassId = typeof row.class_id === "string" ? row.class_id : ""
+
+    if (rowClassId && classNameById.has(rowClassId)) {
+      return true
+    }
+
+    if (studentId && defaultClassByStudent.has(studentId)) {
+      return true
+    }
+
+    return false
+  })
+
+  if (!courseRows.length) {
+    return {
+      items: [] as any[],
+      classes: classes.map((classRow: any) => ({ id: classRow.id, name: classRow.name })),
+    }
+  }
+
+  const studentIds = Array.from(
+    new Set(
+      courseRows
+        .map((row: any) => (typeof row.student_id === "string" ? row.student_id : ""))
+        .filter(Boolean),
+    ),
+  )
+
+  const profileByStudentId = new Map<string, any>()
+  for (const studentId of studentIds) {
+    const profileSnap = await getDoc(doc(db, "profiles", studentId))
+    if (profileSnap.exists()) {
+      profileByStudentId.set(studentId, profileSnap.data())
+    }
+  }
+
+  const sourceDocumentIds = Array.from(
+    new Set(
+      courseRows
+        .map((row: any) => (typeof row.source_document_id === "string" ? row.source_document_id.trim() : ""))
+        .filter(Boolean),
+    ),
+  )
+
+  const documentNameById = new Map<string, string>()
+  if (sourceDocumentIds.length) {
+    for (const batch of batchIds(sourceDocumentIds)) {
+      const docs = await queryDocs(db, "documents", where("__name__", "in", batch))
+      for (const row of docs) {
+        const name = typeof row.name === "string" ? row.name : "Document"
+        documentNameById.set(row.id, name)
+      }
+    }
+  }
+
+  const courseExerciseIds = new Set(courseRows.map((row: any) => row.id))
+
+  const needsCompletionFallback = courseRows.some((row: any) => {
+    const hasResponseText = typeof row.response_text === "string" && row.response_text.trim().length > 0
+    const hasResponseAnswers = Object.keys(parseCourseExerciseAnswers(row.response_answers)).length > 0
+    return !hasResponseText && !hasResponseAnswers
+  })
+
+  let completionEvents: any[] = []
+  if (needsCompletionFallback) {
+    for (const batch of batchIds(classIds)) {
+      const rows = await queryDocs(db, "activity_events", where("class_id", "in", batch))
+      completionEvents.push(...rows)
+    }
+
+    if (studentIds.length) {
+      for (const batch of batchIds(studentIds)) {
+        const rows = await queryDocs(db, "activity_events", where("actor_id", "in", batch))
+        completionEvents.push(...rows)
+      }
+    }
+  }
+
+  completionEvents = Array.from(new Map(completionEvents.map((event: any) => [event.id, event])).values())
+
+  const completionByExerciseId = new Map<string, {
+    responseText: string
+    submittedAt: string | null
+    responseAnswers: CourseExerciseAnswersPayload
+  }>()
+
+  const sortedCompletionEvents = completionEvents
+    .filter((event: any) => event.event_type === "completion")
+    .sort((left: any, right: any) => {
+      const leftDate = toDate(left.created_at)?.getTime() || 0
+      const rightDate = toDate(right.created_at)?.getTime() || 0
+      return rightDate - leftDate
+    })
+
+  for (const event of sortedCompletionEvents) {
+    if (schoolId && typeof event.school_id === "string" && event.school_id !== schoolId) continue
+
+    const payload = event.payload && typeof event.payload === "object" ? event.payload : null
+    const payloadKind = typeof payload?.kind === "string" ? payload.kind : ""
+    const isCourseCompletion = payloadKind === "course_exercise_completion"
+      || payloadKind === "personalized_exercise_completion"
+    if (!payload || !isCourseCompletion) continue
+
+    const exerciseId = typeof payload.exercise_id === "string" ? payload.exercise_id : ""
+    if (!courseExerciseIds.has(exerciseId)) continue
+    if (!exerciseId || completionByExerciseId.has(exerciseId)) continue
+
+    completionByExerciseId.set(exerciseId, {
+      responseText: typeof payload.response === "string" ? payload.response : "",
+      submittedAt: typeof payload.submitted_at === "string" ? payload.submitted_at : toISOString(event.created_at),
+      responseAnswers: parseCourseExerciseAnswers(payload.answers),
+    })
+  }
+
+  const items = courseRows
+    .map((exercise: any) => {
+      const completion = completionByExerciseId.get(exercise.id)
+      const storedResponseText = typeof exercise.response_text === "string" ? exercise.response_text : ""
+      const storedResponseAnswers = parseCourseExerciseAnswers(exercise.response_answers)
+      const completionAnswers = completion?.responseAnswers || {}
+      const responseAnswers = Object.keys(completionAnswers).length ? completionAnswers : storedResponseAnswers
+      const responseText = completion?.responseText || storedResponseText
+      const responseSubmittedAt = completion?.submittedAt
+        || toISOString(exercise.response_submitted_at)
+        || toISOString(exercise.completed_at)
+        || null
+      const submittedAtRaw = responseSubmittedAt
+        || toISOString(exercise.completed_at)
+        || toISOString(exercise.updated_at)
+        || toISOString(exercise.created_at)
+        || null
+
+      const isCompleted = !!exercise.is_completed || !!completion || !!responseSubmittedAt
+      const teacherFeedback = typeof exercise.teacher_feedback === "string" ? exercise.teacher_feedback.trim() : ""
+      const teacherFeedbackAt = toISOString(exercise.teacher_feedback_at)
+      const teacherQuestionFeedback = parseCourseExerciseQuestionReviews(exercise.teacher_question_feedback)
+      const hasTeacherQuestionFeedback = Object.keys(teacherQuestionFeedback).length > 0
+
+      const topicKey = parseCourseTopic(exercise.source_topic)
+      const materialType = parseCourseMaterialType(exercise.source_material_type)
+
+      const studentId = typeof exercise.student_id === "string" ? exercise.student_id : ""
+      const sourceDocumentId = typeof exercise.source_document_id === "string"
+        ? exercise.source_document_id
+        : null
+      const sourceDocumentNameRaw = typeof exercise.source_document_name === "string"
+        ? exercise.source_document_name.trim()
+        : ""
+      const sourceDocumentName = sourceDocumentNameRaw
+        || (sourceDocumentId ? documentNameById.get(sourceDocumentId) || null : null)
+
+      const rawClassId = typeof exercise.class_id === "string" ? exercise.class_id : ""
+      const resolvedClassId = rawClassId && classNameById.has(rawClassId)
+        ? rawClassId
+        : defaultClassByStudent.get(studentId) || null
+
+      if (!resolvedClassId) return null
+      if (classId && resolvedClassId !== classId) return null
+
+      return {
+        id: exercise.id,
+        classId: resolvedClassId,
+        schoolId: exercise.school_id || schoolId,
+        studentId,
+        student: profileByStudentId.get(studentId)?.full_name || "Élève",
+        className: classNameById.get(resolvedClassId) || "Classe",
+        title: typeof exercise.title === "string" ? exercise.title : "Exercice de cours",
+        submitted: submittedAtRaw ? toLocaleDateFR(submittedAtRaw) : "-",
+        submittedAtRaw,
+        status: teacherFeedback || hasTeacherQuestionFeedback ? "Graded" : "Pending",
+        statusRaw: teacherFeedback || hasTeacherQuestionFeedback ? "graded" : "submitted",
+        level: upLevel(exercise.cefr_level),
+        type: normalizeAssignmentType(exercise.exercise_type),
+        instructions: typeof exercise.instructions === "string" ? exercise.instructions : "",
+        responseText,
+        responseAnswers,
+        questions: parseCourseExerciseQuestions(exercise.questions),
+        sourceDocumentId,
+        sourceDocumentName,
+        topicKey,
+        topicLabel: topicKey ? courseTopicLabel(topicKey) : null,
+        materialType,
+        materialLabel: materialType ? courseMaterialTypeLabel(materialType) : null,
+        teacherFeedback,
+        teacherFeedbackAt,
+        teacherQuestionFeedback,
+        isCompleted,
+      }
+    })
+    .filter((item: any) => !!item)
+    .filter((item: any) => item.isCompleted || !!item.teacherFeedback || Object.keys(item.teacherQuestionFeedback || {}).length > 0)
+
+  items.sort((left: any, right: any) => {
+    if (left.status !== right.status) {
+      return left.status === "Pending" ? -1 : 1
+    }
+
+    const leftDate = left.submittedAtRaw ? new Date(left.submittedAtRaw).getTime() : 0
+    const rightDate = right.submittedAtRaw ? new Date(right.submittedAtRaw).getTime() : 0
+    if (leftDate !== rightDate) return rightDate - leftDate
+
+    return String(left.student || "").localeCompare(String(right.student || ""), "fr")
+  })
+
+  return {
+    items,
+    classes: classes.map((classRow: any) => ({ id: classRow.id, name: classRow.name })),
   }
 }
 
@@ -2139,9 +2471,18 @@ export async function fetchStudentExercisesData(db: Firestore, userId: string, s
     }),
     personalizedExercises: personalized.map((exercise: any) => {
       const completion = completionByExerciseId.get(exercise.id)
+      const storedResponseText = typeof exercise.response_text === "string" ? exercise.response_text : ""
+      const storedResponseAnswers = parseCourseExerciseAnswers(exercise.response_answers)
+      const completionAnswers = completion?.responseAnswers || {}
+      const responseAnswers = Object.keys(completionAnswers).length ? completionAnswers : storedResponseAnswers
+      const responseSubmittedAt = completion?.submittedAt
+        || toISOString(exercise.response_submitted_at)
+        || toISOString(exercise.completed_at)
+        || null
       const topicKey = parseCourseTopic(exercise.source_topic)
       const materialType = parseCourseMaterialType(exercise.source_material_type)
       const questions = parseCourseExerciseQuestions(exercise.questions)
+      const teacherQuestionFeedback = parseCourseExerciseQuestionReviews(exercise.teacher_question_feedback)
 
       return {
         id: exercise.id,
@@ -2151,13 +2492,13 @@ export async function fetchStudentExercisesData(db: Firestore, userId: string, s
         instructions: exercise.instructions,
         type: normalizeAssignmentType(exercise.exercise_type),
         level: upLevel(exercise.cefr_level),
-        isCompleted: !!exercise.is_completed || !!completion,
+        isCompleted: !!exercise.is_completed || !!completion || !!responseSubmittedAt,
         dueAt: toISOString(exercise.due_at),
         createdAt: toISOString(exercise.created_at),
         readOnly: false,
-        responseText: completion?.responseText || "",
-        responseSubmittedAt: completion?.submittedAt || null,
-        responseAnswers: completion?.responseAnswers || {},
+        responseText: completion?.responseText || storedResponseText,
+        responseSubmittedAt,
+        responseAnswers,
         questions,
         sourceKind: typeof exercise.source_kind === "string" ? exercise.source_kind : null,
         sourceDocumentId: typeof exercise.source_document_id === "string" ? exercise.source_document_id : null,
@@ -2166,6 +2507,9 @@ export async function fetchStudentExercisesData(db: Firestore, userId: string, s
         topicLabel: topicKey ? courseTopicLabel(topicKey) : null,
         materialType,
         materialLabel: materialType ? courseMaterialTypeLabel(materialType) : null,
+        teacherFeedback: typeof exercise.teacher_feedback === "string" ? exercise.teacher_feedback : "",
+        teacherFeedbackAt: toISOString(exercise.teacher_feedback_at),
+        teacherQuestionFeedback,
       }
     }),
   }

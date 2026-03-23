@@ -46,6 +46,8 @@ type CourseExerciseRow = {
   materialType: CourseMaterialTypeKey | null
   materialLabel: string | null
   questions: CourseExerciseQuestion[]
+  teacherFeedback: string
+  teacherFeedbackAt: string | null
 }
 
 type CourseModuleBucket = "comprehension" | "vocabulary" | "structure" | "consolidation"
@@ -612,6 +614,8 @@ function normalizeCourseExerciseRow(exercise: any): CourseExerciseRow {
     materialType,
     materialLabel: typeof exercise.materialLabel === "string" ? exercise.materialLabel : null,
     questions: normalizeQuestions(exercise.questions),
+    teacherFeedback: typeof exercise.teacherFeedback === "string" ? exercise.teacherFeedback : "",
+    teacherFeedbackAt: typeof exercise.teacherFeedbackAt === "string" ? exercise.teacherFeedbackAt : null,
   }
 }
 
@@ -756,6 +760,9 @@ export default function StudentCourseExercisesPage() {
       await updateDoc(doc(db, "personalized_exercises", exercise.id), {
         is_completed: true,
         completed_at: now,
+        response_text: response,
+        response_answers: submittedAnswers,
+        response_submitted_at: now,
         updated_at: serverTimestamp(),
       })
 
@@ -796,28 +803,44 @@ export default function StudentCourseExercisesPage() {
       }))
       .filter((row) => !!row.answer)
 
-    if (answeredRows.length) {
-      return (
-        <div className="mt-3 rounded-lg border border-violet/20 bg-violet/5 px-3 py-2.5">
-          <div className="font-sans text-[12px] font-semibold text-violet mb-1">Mes réponses</div>
-          <div className="flex flex-col gap-2">
-            {answeredRows.map((row) => (
-              <div key={row.key}>
-                <div className="font-sans text-[12px] font-semibold text-text-dark">{row.label}</div>
-                <div className="font-sans text-sm text-text-mid whitespace-pre-wrap leading-relaxed">{row.answer}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )
+    const teacherFeedback = (exercise.teacherFeedback || "").trim()
+    const teacherFeedbackDate = exercise.teacherFeedbackAt
+      ? new Date(exercise.teacherFeedbackAt).toLocaleDateString("fr-FR")
+      : null
+
+    if (!answeredRows.length && !exercise.responseText && !teacherFeedback) {
+      return null
     }
 
-    if (!exercise.responseText) return null
-
     return (
-      <div className="mt-3 rounded-lg border border-violet/20 bg-violet/5 px-3 py-2.5">
-        <div className="font-sans text-[12px] font-semibold text-violet mb-1">Ma réponse</div>
-        <p className="font-sans text-sm text-text-dark whitespace-pre-wrap leading-relaxed">{exercise.responseText}</p>
+      <div className="mt-3 flex flex-col gap-2">
+        {answeredRows.length ? (
+          <div className="rounded-lg border border-violet/20 bg-violet/5 px-3 py-2.5">
+            <div className="font-sans text-[12px] font-semibold text-violet mb-1">Mes réponses</div>
+            <div className="flex flex-col gap-2">
+              {answeredRows.map((row) => (
+                <div key={row.key}>
+                  <div className="font-sans text-[12px] font-semibold text-text-dark">{row.label}</div>
+                  <div className="font-sans text-sm text-text-mid whitespace-pre-wrap leading-relaxed">{row.answer}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : exercise.responseText ? (
+          <div className="rounded-lg border border-violet/20 bg-violet/5 px-3 py-2.5">
+            <div className="font-sans text-[12px] font-semibold text-violet mb-1">Ma réponse</div>
+            <p className="font-sans text-sm text-text-dark whitespace-pre-wrap leading-relaxed">{exercise.responseText}</p>
+          </div>
+        ) : null}
+
+        {teacherFeedback && (
+          <div className="rounded-lg border border-navy/20 bg-navy/5 px-3 py-2.5">
+            <div className="font-sans text-[12px] font-semibold text-navy mb-1">
+              Retour enseignant{teacherFeedbackDate ? ` · ${teacherFeedbackDate}` : ""}
+            </div>
+            <p className="font-sans text-sm text-text-dark whitespace-pre-wrap leading-relaxed">{teacherFeedback}</p>
+          </div>
+        )}
       </div>
     )
   }
@@ -858,6 +881,7 @@ export default function StudentCourseExercisesPage() {
               )}
               {exercise.sourceDocumentName && <span>Source: {exercise.sourceDocumentName}</span>}
               {exercise.responseSubmittedAt && <span>Répondu le {new Date(exercise.responseSubmittedAt).toLocaleDateString("fr-FR")}</span>}
+              {exercise.teacherFeedbackAt && <span>Commenté le {new Date(exercise.teacherFeedbackAt).toLocaleDateString("fr-FR")}</span>}
             </div>
             <div className="font-sans text-sm text-text-mid mt-2 whitespace-pre-wrap leading-relaxed">
               {resolvedInstructions(exercise)}
@@ -915,6 +939,18 @@ export default function StudentCourseExercisesPage() {
             <div className="font-sans text-[12px] text-text-light mb-2">
               Survolez ou appuyez sur le I pour voir un indice.
             </div>
+
+            {!!exercise.teacherFeedback.trim() && (
+              <div className="mb-3 rounded-lg border border-navy/20 bg-navy/5 px-3 py-2.5">
+                <div className="font-sans text-[12px] font-semibold text-navy mb-1">
+                  Retour enseignant
+                  {exercise.teacherFeedbackAt ? ` · ${new Date(exercise.teacherFeedbackAt).toLocaleDateString("fr-FR")}` : ""}
+                </div>
+                <p className="font-sans text-sm text-text-dark whitespace-pre-wrap leading-relaxed">
+                  {exercise.teacherFeedback}
+                </p>
+              </div>
+            )}
 
             <div className="flex flex-col gap-3">
               {questions.map((question, index) => (

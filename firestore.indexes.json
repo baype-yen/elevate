@@ -236,6 +236,15 @@
       ]
     },
     {
+      "collectionGroup": "teacher_feedback",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "student_id", "order": "ASCENDING" },
+        { "fieldPath": "school_id", "order": "ASCENDING" },
+        { "fieldPath": "created_at", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "class_students",
       "queryScope": "COLLECTION",
       "fields": [

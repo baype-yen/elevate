@@ -85,6 +85,12 @@ service cloud.firestore {
       // Creation and deletion handled server-side via Admin SDK
     }
 
+    // Flashcard adaptive progress
+    match /flashcard_progress/{studentId} {
+      allow read: if isSignedIn() && request.auth.uid == studentId;
+      // Updates handled server-side via Admin SDK
+    }
+
     // Skills
     match /skills/{skillId} {
       allow read: if isSignedIn();

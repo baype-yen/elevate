@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "backfill:course-answers": "node scripts/backfill-course-response-answers.cjs",
+    "backfill:course-answers:apply": "node scripts/backfill-course-response-answers.cjs --apply"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

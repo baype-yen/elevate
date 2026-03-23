@@ -115,6 +115,8 @@ This repository includes Supabase migrations in `supabase/migrations` and seed d
 - `npm run build` - production build
 - `npm run start` - run production server
 - `npm run lint` - run ESLint
+- `npm run backfill:course-answers` - dry-run backfill of missing `response_answers` for course exercises
+- `npm run backfill:course-answers:apply` - apply the backfill changes in Firestore
 
 ## Deploy to Vercel
 
