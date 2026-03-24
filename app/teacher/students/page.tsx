@@ -5,12 +5,53 @@ import { Icons } from "@/components/elevate/icons"
 import { BadgeChooser, ElevateButton, InputField, LevelBadge } from "@/components/elevate/shared"
 import { cn } from "@/lib/utils"
 import { db, auth } from "@/lib/firebase/client"
-import { collection, query, where, orderBy, getDocs } from "firebase/firestore"
+import { collection, query, where, orderBy, getDocs, addDoc, serverTimestamp, limit } from "firebase/firestore"
 import { useAppContext } from "@/hooks/use-app-context"
 import { fetchTeacherStudentsData, type TeacherStudentRow, type TeacherStudentsData } from "@/lib/firebase/client-data"
 
 const avatarColors = ["bg-abricot", "bg-violet", "bg-watermelon", "bg-navy"]
 const cefrLevels = ["A1", "A2", "B1", "B2", "C1", "C2"] as const
+
+type ManualExerciseType = "mixed" | "grammar" | "conjugation" | "vocabulary" | "writing"
+
+const manualExerciseTypeOptions: Array<{ value: ManualExerciseType; label: string }> = [
+  { value: "mixed", label: "Mixte" },
+  { value: "grammar", label: "Grammaire" },
+  { value: "conjugation", label: "Conjugaison" },
+  { value: "vocabulary", label: "Vocabulaire" },
+  { value: "writing", label: "Écriture" },
+]
+
+const manualExerciseTemplates: Record<ManualExerciseType, { title: string; instructions: string }> = {
+  mixed: {
+    title: "Remédiation ciblée - Compétences mixtes",
+    instructions: "Travaille les difficultés repérées aujourd'hui : 2 exercices de grammaire, 2 de vocabulaire et 2 de reformulation. Soigne la précision et l'orthographe.",
+  },
+  grammar: {
+    title: "Remédiation ciblée - Grammaire",
+    instructions: "Corrige des phrases avec erreurs de structure (accord sujet-verbe, articles, prépositions, ordre des mots). Pour chaque correction, explique brièvement la règle utilisée.",
+  },
+  conjugation: {
+    title: "Remédiation ciblée - Conjugaison",
+    instructions: "Reprends les temps verbaux vus en cours. Complète puis réécris des phrases en choisissant le bon temps et le bon auxiliaire. Justifie les choix sur 2 exemples.",
+  },
+  vocabulary: {
+    title: "Remédiation ciblée - Vocabulaire",
+    instructions: "Renforce le lexique professionnel : reformule les phrases avec un vocabulaire plus précis, puis crée 8 phrases personnelles pour mémoriser les nouveaux mots.",
+  },
+  writing: {
+    title: "Remédiation ciblée - Production écrite",
+    instructions: "Rédige un texte court structuré en appliquant les corrections vues ensemble : clarté, connecteurs, grammaire, ponctuation et vocabulaire adapté au contexte.",
+  },
+}
+
+function normalizeManualExerciseType(value: string): ManualExerciseType {
+  if (value === "grammar") return "grammar"
+  if (value === "conjugation") return "conjugation"
+  if (value === "vocabulary") return "vocabulary"
+  if (value === "writing") return "writing"
+  return "mixed"
+}
 
 function levelColorClass(level: string) {
   if (level === "B2") return "watermelon"
@@ -87,6 +128,17 @@ function normalizeEmailDomain(value: string) {
   return cleaned || "ecole.local"
 }
 
+function toDateMs(value: any): number {
+  if (!value) return 0
+  if (typeof value?.toDate === "function") return value.toDate().getTime()
+  if (value instanceof Date) return value.getTime()
+  if (typeof value === "string") {
+    const parsed = Date.parse(value)
+    return Number.isNaN(parsed) ? 0 : parsed
+  }
+  return 0
+}
+
 function buildTempPassword(firstName: string, lastName: string, index: number) {
   const firstToken = sanitizeToken(firstName)
   const lastToken = sanitizeToken(lastName)
@@ -107,14 +159,88 @@ export default function StudentsPage() {
   const [enrollBusy, setEnrollBusy] = useState(false)
   const [bulkSyncBusy, setBulkSyncBusy] = useState(false)
   const [levelBusyId, setLevelBusyId] = useState<string | null>(null)
+  const [manualExerciseBusy, setManualExerciseBusy] = useState(false)
   const [enrollError, setEnrollError] = useState<string | null>(null)
   const [enrollSuccess, setEnrollSuccess] = useState<string | null>(null)
   const [levelError, setLevelError] = useState<string | null>(null)
   const [levelSuccess, setLevelSuccess] = useState<string | null>(null)
+  const [manualExerciseError, setManualExerciseError] = useState<string | null>(null)
+  const [manualExerciseSuccess, setManualExerciseSuccess] = useState<string | null>(null)
   const [levelDrafts, setLevelDrafts] = useState<Record<string, string>>({})
+  const [manualTargetStudentRowId, setManualTargetStudentRowId] = useState("")
+  const [manualExerciseType, setManualExerciseType] = useState<ManualExerciseType>("mixed")
+  const [manualExerciseLevel, setManualExerciseLevel] = useState("B1")
+  const [manualExerciseTitle, setManualExerciseTitle] = useState("")
+  const [manualExerciseInstructions, setManualExerciseInstructions] = useState("")
+  const [manualExerciseDueDate, setManualExerciseDueDate] = useState("")
+  const [manualAssignedTodayByRow, setManualAssignedTodayByRow] = useState<Record<string, number>>({})
   const [emailDomain, setEmailDomain] = useState("btsmco.local")
   const [credentialHelperMessage, setCredentialHelperMessage] = useState<string | null>(null)
   const [rosterCandidates, setRosterCandidates] = useState<Array<{ id: string; firstName: string; lastName: string }>>([])
+
+  const loadManualAssignmentsToday = async (nextData?: TeacherStudentsData | null) => {
+    if (!context) {
+      setManualAssignedTodayByRow({})
+      return
+    }
+
+    const sourceData = nextData || data
+    if (!sourceData?.students.length) {
+      setManualAssignedTodayByRow({})
+      return
+    }
+
+    const assignableRows = sourceData.students.filter((student) => student.canEditLevel && !!student.studentId && !!student.classId)
+    if (!assignableRows.length) {
+      setManualAssignedTodayByRow({})
+      return
+    }
+
+    const rowKeys = new Set(assignableRows.map((student) => `${student.classId}:${student.studentId}`))
+    const selectedClassId = !Array.isArray(selectedClass) && selectedClass !== "all" ? selectedClass : null
+
+    const startOfToday = new Date()
+    startOfToday.setHours(0, 0, 0, 0)
+    const startOfTodayMs = startOfToday.getTime()
+
+    try {
+      const eventsSnapshot = await getDocs(query(
+        collection(db, "activity_events"),
+        where("actor_id", "==", context.userId),
+        where("school_id", "==", context.activeSchoolId),
+        orderBy("created_at", "desc"),
+        limit(800),
+      ))
+
+      const countsByRow: Record<string, number> = {}
+
+      for (const eventDoc of eventsSnapshot.docs) {
+        const event = eventDoc.data() as any
+        const createdAtMs = toDateMs(event.created_at)
+        if (createdAtMs && createdAtMs < startOfTodayMs) break
+
+        if (event.event_type !== "assignment_created") continue
+
+        const payload = event.payload && typeof event.payload === "object" ? event.payload : null
+        const payloadKind = typeof payload?.kind === "string" ? payload.kind : ""
+        if (payloadKind !== "teacher_manual_exercise") continue
+
+        const studentId = typeof event.target_user_id === "string" ? event.target_user_id : ""
+        const classId = typeof event.class_id === "string" ? event.class_id : ""
+        if (!studentId || !classId) continue
+        if (selectedClassId && classId !== selectedClassId) continue
+
+        const rowKey = `${classId}:${studentId}`
+        if (!rowKeys.has(rowKey)) continue
+
+        countsByRow[rowKey] = (countsByRow[rowKey] || 0) + 1
+      }
+
+      setManualAssignedTodayByRow(countsByRow)
+    } catch {
+      setManualAssignedTodayByRow({})
+    }
+  }
 
   const loadStudents = async () => {
     if (!context) return
@@ -125,6 +251,7 @@ export default function StudentsPage() {
       selectedClass === "all" ? null : String(selectedClass),
     )
     setData(nextData)
+    await loadManualAssignmentsToday(nextData)
   }
 
   useEffect(() => {
@@ -160,6 +287,45 @@ export default function StudentsPage() {
     }
     setLevelDrafts(nextDrafts)
   }, [data?.students])
+
+  const assignableStudents = useMemo(
+    () => data?.students.filter((student) => student.canEditLevel && !!student.studentId && !!student.classId) || [],
+    [data?.students],
+  )
+
+  const manualTargetStudent = useMemo(
+    () => assignableStudents.find((student) => student.id === manualTargetStudentRowId) || null,
+    [assignableStudents, manualTargetStudentRowId],
+  )
+
+  useEffect(() => {
+    if (!assignableStudents.length) {
+      setManualTargetStudentRowId("")
+      return
+    }
+
+    if (!manualTargetStudentRowId || !assignableStudents.some((student) => student.id === manualTargetStudentRowId)) {
+      setManualTargetStudentRowId(assignableStudents[0].id)
+    }
+  }, [assignableStudents, manualTargetStudentRowId])
+
+  useEffect(() => {
+    if (!manualTargetStudent) return
+    if (manualExerciseTitle.trim() || manualExerciseInstructions.trim()) return
+
+    const nextLevel = (levelDrafts[manualTargetStudent.id] || manualTargetStudent.level || "B1").toUpperCase()
+    const template = manualExerciseTemplates[manualExerciseType]
+
+    setManualExerciseLevel(nextLevel)
+    setManualExerciseTitle(`${template.title} (${nextLevel})`)
+    setManualExerciseInstructions(template.instructions)
+  }, [
+    manualTargetStudent,
+    levelDrafts,
+    manualExerciseType,
+    manualExerciseTitle,
+    manualExerciseInstructions,
+  ])
 
   useEffect(() => {
     if (!context || !enrollClassId) {
@@ -337,6 +503,113 @@ export default function StudentsPage() {
       setEnrollSuccess(`Synchronisation terminée : ${created} créés, ${updated} mots de passe réinitialisés.`)
     } finally {
       setBulkSyncBusy(false)
+    }
+  }
+
+  const openManualExerciseComposer = (student: TeacherStudentRow, preferredType: ManualExerciseType = "mixed") => {
+    if (!student.canEditLevel || !student.studentId || !student.classId) {
+      setManualExerciseError("Créez d'abord l'accès élève pour pouvoir assigner des exercices personnalisés.")
+      return
+    }
+
+    const nextType = normalizeManualExerciseType(preferredType)
+    const nextLevel = (levelDrafts[student.id] || student.level || "B1").toUpperCase()
+    const template = manualExerciseTemplates[nextType]
+
+    setManualTargetStudentRowId(student.id)
+    setManualExerciseType(nextType)
+    setManualExerciseLevel(nextLevel)
+    setManualExerciseTitle(`${template.title} (${nextLevel})`)
+    setManualExerciseInstructions(template.instructions)
+    setManualExerciseDueDate("")
+    setManualExerciseError(null)
+    setManualExerciseSuccess(null)
+  }
+
+  const onApplyManualTemplate = () => {
+    const nextType = normalizeManualExerciseType(manualExerciseType)
+    const nextLevel = (manualExerciseLevel || "B1").toUpperCase()
+    const template = manualExerciseTemplates[nextType]
+
+    setManualExerciseType(nextType)
+    setManualExerciseLevel(nextLevel)
+    setManualExerciseTitle(`${template.title} (${nextLevel})`)
+    setManualExerciseInstructions(template.instructions)
+  }
+
+  const onAssignManualExercise = async () => {
+    if (!context) return
+
+    if (!manualTargetStudent?.studentId || !manualTargetStudent.classId) {
+      setManualExerciseError("Sélectionnez un élève avec accès actif avant d'assigner un exercice.")
+      return
+    }
+
+    const title = manualExerciseTitle.trim()
+    const instructions = manualExerciseInstructions.trim()
+    if (!title || !instructions) {
+      setManualExerciseError("Le titre et la consigne sont obligatoires.")
+      return
+    }
+
+    const level = (manualExerciseLevel || manualTargetStudent.level || "B1").toUpperCase()
+    if (!cefrLevels.includes(level as (typeof cefrLevels)[number])) {
+      setManualExerciseError("Niveau CECRL invalide.")
+      return
+    }
+
+    const dueAt = manualExerciseDueDate
+      ? new Date(`${manualExerciseDueDate}T23:59:59`).toISOString()
+      : null
+
+    try {
+      setManualExerciseBusy(true)
+      setManualExerciseError(null)
+      setManualExerciseSuccess(null)
+
+      await addDoc(collection(db, "personalized_exercises"), {
+        school_id: context.activeSchoolId,
+        class_id: manualTargetStudent.classId,
+        student_id: manualTargetStudent.studentId,
+        created_by: context.userId,
+        title,
+        instructions,
+        exercise_type: manualExerciseType,
+        cefr_level: level.toLowerCase(),
+        due_at: dueAt,
+        source_kind: "teacher_manual",
+        is_completed: false,
+        created_at: serverTimestamp(),
+        updated_at: serverTimestamp(),
+      })
+
+      await addDoc(collection(db, "activity_events"), {
+        school_id: context.activeSchoolId,
+        class_id: manualTargetStudent.classId,
+        actor_id: context.userId,
+        target_user_id: manualTargetStudent.studentId,
+        event_type: "assignment_created",
+        payload: {
+          kind: "teacher_manual_exercise",
+          text: `Exercice personnalisé ajouté pour ${manualTargetStudent.name}.`,
+          title,
+          exercise_type: manualExerciseType,
+          cefr_level: level,
+        },
+        created_at: serverTimestamp(),
+      })
+
+      const rowKey = `${manualTargetStudent.classId}:${manualTargetStudent.studentId}`
+      setManualAssignedTodayByRow((previous) => ({
+        ...previous,
+        [rowKey]: (previous[rowKey] || 0) + 1,
+      }))
+      setManualExerciseSuccess(`Exercice personnalisé assigné à ${manualTargetStudent.name}.`)
+      setManualExerciseDueDate("")
+    } catch (error: any) {
+      setManualExerciseError(error?.message || "Impossible d'assigner l'exercice personnalisé.")
+    } finally {
+      setManualExerciseBusy(false)
     }
   }
 
@@ -568,7 +841,7 @@ export default function StudentsPage() {
         </div>
 
         <div className="bg-card rounded-2xl border border-gray-mid overflow-hidden">
-          <div className="hidden md:grid grid-cols-[1.9fr_1.7fr_0.8fr_1fr_80px] px-5 py-3 bg-gray-light font-sans text-[11px] font-semibold tracking-wider uppercase text-text-light">
+          <div className="hidden md:grid grid-cols-[1.9fr_1.7fr_0.8fr_1fr_120px] px-5 py-3 bg-gray-light font-sans text-[11px] font-semibold tracking-wider uppercase text-text-light">
             <span>Élève</span>
             <span>Niveau CECRL</span>
             <span>Score</span>
@@ -577,8 +850,13 @@ export default function StudentsPage() {
           </div>
           {levelError && <div className="px-5 py-2 font-sans text-sm text-watermelon border-t border-gray-light">{levelError}</div>}
           {levelSuccess && <div className="px-5 py-2 font-sans text-sm text-violet border-t border-gray-light">{levelSuccess}</div>}
-          {data.students.map((s, i) => (
-            <div key={s.id} className="grid grid-cols-1 md:grid-cols-[1.9fr_1.7fr_0.8fr_1fr_80px] px-5 py-3.5 items-center border-t border-gray-light gap-2 md:gap-0">
+          {data.students.map((s, i) => {
+            const assignedTodayCount = s.studentId
+              ? (manualAssignedTodayByRow[`${s.classId}:${s.studentId}`] || 0)
+              : 0
+
+            return (
+            <div key={s.id} className="grid grid-cols-1 md:grid-cols-[1.9fr_1.7fr_0.8fr_1fr_120px] px-5 py-3.5 items-center border-t border-gray-light gap-2 md:gap-0">
               <div className="flex items-center gap-2.5">
                 <div className={cn(
                   "w-[34px] h-[34px] rounded-[10px] flex items-center justify-center font-sans font-bold text-xs text-white shrink-0",
@@ -621,20 +899,151 @@ export default function StudentsPage() {
                 )}
               </div>
               <div className="font-serif text-base font-bold text-navy">{s.score}%</div>
-              <div className="font-sans text-[13px] text-text-light">{s.lastActive}</div>
-              <div className="flex gap-1.5">
-                <button className="w-[30px] h-[30px] rounded-lg bg-gray-light flex items-center justify-center text-navy cursor-pointer hover:bg-gray-mid transition-colors">
-                  <Icons.Eye />
+              <div>
+                <div className="font-sans text-[13px] text-text-light">{s.lastActive}</div>
+                <div className="mt-1 inline-flex rounded-md border border-violet/25 bg-violet/10 px-2 py-0.5 font-sans text-[10px] font-semibold text-violet">
+                  Auj.: {assignedTodayCount}
+                </div>
+              </div>
+              <div className="flex gap-1.5 justify-start md:justify-end">
+                <button
+                  onClick={() => openManualExerciseComposer(s)}
+                  disabled={!s.canEditLevel || !s.studentId || !s.classId || manualExerciseBusy}
+                  title={s.canEditLevel ? "Assigner un exercice personnalisé" : "Créez l'accès élève pour assigner"}
+                  className="w-[30px] h-[30px] rounded-lg bg-gray-light flex items-center justify-center text-navy cursor-pointer hover:bg-gray-mid transition-colors disabled:opacity-45 disabled:cursor-not-allowed"
+                >
+                  <Icons.Target />
                 </button>
                 <button className="w-[30px] h-[30px] rounded-lg bg-gray-light flex items-center justify-center text-navy cursor-pointer hover:bg-gray-mid transition-colors">
                   <Icons.BarChart />
                 </button>
               </div>
             </div>
-          ))}
+            )
+          })}
           {!data.students.length && (
             <div className="px-5 py-6 font-sans text-sm text-text-mid">Aucun élève inscrit trouvé.</div>
           )}
+
+          <div className="border-t border-gray-mid bg-off-white px-5 py-4 flex flex-col gap-3.5">
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+              <div>
+                <h6 className="font-serif text-base font-bold text-navy">Assigner un exercice personnalisé</h6>
+                <p className="font-sans text-[12px] text-text-mid">
+                  Utilisez cet espace pendant la séance pour envoyer une remédiation ciblée dès qu'une difficulté est repérée.
+                </p>
+              </div>
+              {manualTargetStudent && (
+                <div className="flex items-center gap-2">
+                  <span className="font-sans text-xs text-text-light">{manualTargetStudent.name}</span>
+                  <LevelBadge level={manualExerciseLevel || manualTargetStudent.level} colorClass={levelColorClass((manualExerciseLevel || manualTargetStudent.level).toUpperCase())} />
+                </div>
+              )}
+            </div>
+
+            {assignableStudents.length ? (
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-[1.2fr_1fr_1fr] gap-2.5">
+                  <div>
+                    <label className="block font-sans text-[13px] font-semibold text-navy tracking-[0.02em] mb-1.5">Élève cible</label>
+                    <select
+                      value={manualTargetStudentRowId}
+                      onChange={(event) => {
+                        const target = assignableStudents.find((student) => student.id === event.target.value)
+                        if (!target) return
+                        openManualExerciseComposer(target, manualExerciseType)
+                      }}
+                      className="w-full h-10 rounded-lg border border-gray-mid bg-card px-2.5 font-sans text-sm text-text-dark outline-none focus:border-navy"
+                      disabled={manualExerciseBusy}
+                    >
+                      {assignableStudents.map((student) => (
+                        <option key={student.id} value={student.id}>{student.name} · {student.className}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block font-sans text-[13px] font-semibold text-navy tracking-[0.02em] mb-1.5">Niveau ciblé</label>
+                    <select
+                      value={(manualExerciseLevel || "B1").toUpperCase()}
+                      onChange={(event) => setManualExerciseLevel(event.target.value.toUpperCase())}
+                      className="w-full h-10 rounded-lg border border-gray-mid bg-card px-2.5 font-sans text-sm text-text-dark outline-none focus:border-navy"
+                      disabled={manualExerciseBusy}
+                    >
+                      {cefrLevels.map((level) => (
+                        <option key={`manual-level-${level}`} value={level}>{level}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <InputField
+                    label="Échéance (optionnelle)"
+                    type="date"
+                    value={manualExerciseDueDate}
+                    onChange={setManualExerciseDueDate}
+                  />
+                </div>
+
+                <div>
+                  <div className="font-sans text-[13px] font-semibold text-navy mb-1.5">Type d'exercice</div>
+                  <BadgeChooser
+                    selected={manualExerciseType}
+                    onSelect={(value) => setManualExerciseType(normalizeManualExerciseType(String(value)))}
+                    options={manualExerciseTypeOptions}
+                  />
+                </div>
+
+                <InputField
+                  label="Titre"
+                  placeholder="ex. Remédiation ciblée - Grammaire"
+                  icon={<Icons.Clipboard />}
+                  value={manualExerciseTitle}
+                  onChange={setManualExerciseTitle}
+                />
+
+                <div>
+                  <label className="block font-sans text-[13px] font-semibold text-navy tracking-[0.02em] mb-1.5">
+                    Consigne personnalisée
+                  </label>
+                  <textarea
+                    value={manualExerciseInstructions}
+                    onChange={(event) => setManualExerciseInstructions(event.target.value)}
+                    placeholder="Décrivez précisément l'exercice demandé à l'élève..."
+                    className="w-full min-h-[110px] rounded-[10px] border-2 border-gray-mid bg-card px-3 py-2.5 font-sans text-sm text-text-dark placeholder:text-text-light outline-none focus:border-navy focus:shadow-[0_0_0_3px_rgba(27,42,74,0.09)]"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2 flex-wrap">
+                  <ElevateButton variant="primary" icon={<Icons.Target />} onClick={onAssignManualExercise} disabled={manualExerciseBusy}>
+                    {manualExerciseBusy ? "Envoi..." : "Assigner l'exercice"}
+                  </ElevateButton>
+                  <ElevateButton variant="outline" onClick={onApplyManualTemplate} disabled={manualExerciseBusy}>
+                    Utiliser le modèle
+                  </ElevateButton>
+                  <ElevateButton
+                    variant="ghost"
+                    onClick={() => {
+                      setManualExerciseTitle("")
+                      setManualExerciseInstructions("")
+                      setManualExerciseDueDate("")
+                      setManualExerciseError(null)
+                      setManualExerciseSuccess(null)
+                    }}
+                    disabled={manualExerciseBusy}
+                  >
+                    Effacer
+                  </ElevateButton>
+                </div>
+
+                {manualExerciseError && <div className="font-sans text-sm text-watermelon">{manualExerciseError}</div>}
+                {manualExerciseSuccess && <div className="font-sans text-sm text-violet">{manualExerciseSuccess}</div>}
+              </>
+            ) : (
+              <div className="font-sans text-sm text-text-mid">
+                Aucun élève avec accès actif pour l'instant. Créez d'abord les comptes depuis le panneau de gauche.
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
