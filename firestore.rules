@@ -42,6 +42,11 @@ service cloud.firestore {
       allow read, write: if isSignedIn();
     }
 
+    // Class programs (manual calendar planning)
+    match /class_programs/{programId} {
+      allow read, write: if isSignedIn();
+    }
+
     // Class students (roster)
     match /class_students/{studentId} {
       allow read, write: if isSignedIn();

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { adminAuth } from "@/lib/firebase/admin"
+import { normalizeServerErrorMessage, verifyRequestBearerToken } from "@/lib/firebase/request-auth"
 import {
   ensureAdaptiveDeck,
   getOrCreateAdaptiveProgress,
@@ -7,23 +7,12 @@ import {
   toPublicLevels,
 } from "@/lib/flashcards/adaptive-service"
 
-async function getCallerUid(request: Request): Promise<string | null> {
-  const authorization = request.headers.get("authorization")
-  if (!authorization?.startsWith("Bearer ")) return null
-
-  try {
-    const decoded = await adminAuth.verifyIdToken(authorization.slice(7))
-    return decoded.uid
-  } catch {
-    return null
-  }
-}
-
 export async function POST(request: Request) {
-  const callerUid = await getCallerUid(request)
-  if (!callerUid) {
-    return NextResponse.json({ error: "Non autorise." }, { status: 401 })
+  const authResult = await verifyRequestBearerToken(request)
+  if (!authResult.ok) {
+    return NextResponse.json({ error: authResult.error }, { status: authResult.status })
   }
+  const callerUid = authResult.uid
 
   try {
     const progress = await getOrCreateAdaptiveProgress(callerUid)
@@ -45,7 +34,7 @@ export async function POST(request: Request) {
     })
   } catch (error: any) {
     return NextResponse.json(
-      { error: error?.message || "Impossible de charger le deck adaptatif." },
+      { error: normalizeServerErrorMessage(error, "Impossible de charger le deck adaptatif.") },
       { status: 500 },
     )
   }

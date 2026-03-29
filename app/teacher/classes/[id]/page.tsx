@@ -6,13 +6,20 @@ import { useParams, useRouter } from "next/navigation"
 import { Icons } from "@/components/elevate/icons"
 import { ElevateButton, InputField, LevelBadge } from "@/components/elevate/shared"
 import { db } from "@/lib/firebase/client"
+import { cn } from "@/lib/utils"
 import {
   addClassRosterStudent,
   archiveTeacherClass,
+  createTeacherClassProgram,
+  deleteTeacherClassProgram,
   fetchTeacherClassDetail,
+  fetchTeacherClassProgramsData,
   importClassRosterRows,
   removeClassRosterStudent,
+  type TeacherClassProgramComposerData,
+  type TeacherClassProgramQuickLinkKey,
   unarchiveTeacherClass,
+  updateTeacherClassProgram,
 } from "@/lib/firebase/client-data"
 import { useAppContext } from "@/hooks/use-app-context"
 
@@ -118,11 +125,36 @@ function parseRosterCsv(text: string) {
     .filter((row) => row.lastName && row.firstName)
 }
 
+const programQuickLinkOptions: Array<{ key: TeacherClassProgramQuickLinkKey; label: string; description: string }> = [
+  {
+    key: "course_exercises",
+    label: "Exercices basés sur les cours",
+    description: "Ouvre le module d'exercices lié aux documents étudiés.",
+  },
+  {
+    key: "quiz_assignments",
+    label: "Quiz / grammaire",
+    description: "Dirige vers les quiz et exercices de grammaire.",
+  },
+  {
+    key: "personalized_exercises",
+    label: "Exercices personnalisés",
+    description: "Accès rapide aux remédiations ciblées.",
+  },
+]
+
+function normalizeDateKey(value: string) {
+  const match = (value || "").trim().match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (!match) return ""
+  return `${match[1]}-${match[2]}-${match[3]}`
+}
+
 type ClassDetailState = {
   classItem: {
     id: string
     name: string
     level: string
+    classCode?: string | null
     academicYear: string | null
     archivedAt: string | null
     schoolId: string
@@ -153,18 +185,45 @@ export default function TeacherClassDetailPage() {
   const [firstName, setFirstName] = useState("")
   const [company, setCompany] = useState("")
   const [city, setCity] = useState("")
+
+  const [programData, setProgramData] = useState<TeacherClassProgramComposerData>({
+    programs: [],
+    assignments: [],
+    documents: [],
+  })
+  const [editingProgramId, setEditingProgramId] = useState<string | null>(null)
+  const [programDate, setProgramDate] = useState("")
+  const [programTitle, setProgramTitle] = useState("")
+  const [programMajorPoints, setProgramMajorPoints] = useState("")
+  const [programNotes, setProgramNotes] = useState("")
+  const [programAssignmentIds, setProgramAssignmentIds] = useState<string[]>([])
+  const [programDocumentIds, setProgramDocumentIds] = useState<string[]>([])
+  const [programQuickLinks, setProgramQuickLinks] = useState<TeacherClassProgramQuickLinkKey[]>([])
+
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const load = async () => {
     if (!classId) return
-    const result = await fetchTeacherClassDetail(db, classId)
-    setData(result)
+
+    try {
+      const result = await fetchTeacherClassDetail(db, classId)
+      setData(result)
+    } catch {
+      setData(null)
+    }
+
+    try {
+      const programs = await fetchTeacherClassProgramsData(db, classId, context?.activeSchoolId)
+      setProgramData(programs)
+    } catch {
+      setProgramData({ programs: [], assignments: [], documents: [] })
+    }
   }
 
   useEffect(() => {
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [classId])
+  }, [classId, context?.activeSchoolId])
 
   const roster = useMemo(() => {
     return [...(data?.roster || [])].sort((a, b) => {
@@ -172,6 +231,125 @@ export default function TeacherClassDetailPage() {
       return `${a.lastName} ${a.firstName}`.localeCompare(`${b.lastName} ${b.firstName}`)
     })
   }, [data?.roster])
+
+  const sortedPrograms = useMemo(() => {
+    return [...(programData.programs || [])].sort((left, right) => right.dateKey.localeCompare(left.dateKey))
+  }, [programData.programs])
+
+  const assignableAssignments = useMemo(
+    () => (programData.assignments || []).filter((assignment) => assignment.isPublished),
+    [programData.assignments],
+  )
+
+  const resetProgramComposer = () => {
+    setEditingProgramId(null)
+    setProgramDate("")
+    setProgramTitle("")
+    setProgramMajorPoints("")
+    setProgramNotes("")
+    setProgramAssignmentIds([])
+    setProgramDocumentIds([])
+    setProgramQuickLinks([])
+  }
+
+  const toggleStringValue = (current: string[], value: string) => {
+    if (current.includes(value)) return current.filter((item) => item !== value)
+    return [...current, value]
+  }
+
+  const toggleQuickLinkValue = (current: TeacherClassProgramQuickLinkKey[], value: TeacherClassProgramQuickLinkKey) => {
+    if (current.includes(value)) return current.filter((item) => item !== value)
+    return [...current, value]
+  }
+
+  const onEditProgram = (programId: string) => {
+    const row = programData.programs.find((program) => program.id === programId)
+    if (!row) return
+
+    setEditingProgramId(row.id)
+    setProgramDate(row.dateKey)
+    setProgramTitle(row.title)
+    setProgramMajorPoints(row.majorPoints || "")
+    setProgramNotes(row.notes || "")
+    setProgramAssignmentIds(row.assignmentIds || [])
+    setProgramDocumentIds(row.documentIds || [])
+    setProgramQuickLinks(row.quickLinks || [])
+    setError(null)
+    setSuccess(null)
+  }
+
+  const onSaveProgram = async () => {
+    if (!context || !data) return
+
+    const dateKey = normalizeDateKey(programDate)
+    if (!dateKey) {
+      setError("La date du programme est obligatoire.")
+      return
+    }
+
+    if (!programTitle.trim()) {
+      setError("Le titre du programme est obligatoire.")
+      return
+    }
+
+    try {
+      setBusy(true)
+      setError(null)
+      setSuccess(null)
+
+      if (editingProgramId) {
+        await updateTeacherClassProgram(db, editingProgramId, {
+          dateKey,
+          title: programTitle,
+          majorPoints: programMajorPoints,
+          notes: programNotes,
+          assignmentIds: programAssignmentIds,
+          documentIds: programDocumentIds,
+          quickLinks: programQuickLinks,
+        })
+        setSuccess("Programme de séance mis à jour.")
+      } else {
+        await createTeacherClassProgram(db, {
+          classId,
+          schoolId: data.classItem.schoolId,
+          teacherId: context.userId,
+          dateKey,
+          title: programTitle,
+          majorPoints: programMajorPoints,
+          notes: programNotes,
+          assignmentIds: programAssignmentIds,
+          documentIds: programDocumentIds,
+          quickLinks: programQuickLinks,
+        })
+        setSuccess("Programme de séance ajouté.")
+      }
+
+      await load()
+      resetProgramComposer()
+    } catch (e: any) {
+      setError(e.message || "Impossible d'enregistrer le programme.")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const onDeleteProgram = async (programId: string) => {
+    try {
+      setBusy(true)
+      setError(null)
+      setSuccess(null)
+      await deleteTeacherClassProgram(db, programId)
+      if (editingProgramId === programId) {
+        resetProgramComposer()
+      }
+      await load()
+      setSuccess("Programme supprimé.")
+    } catch (e: any) {
+      setError(e.message || "Impossible de supprimer ce programme.")
+    } finally {
+      setBusy(false)
+    }
+  }
 
   const onToggleArchive = async () => {
     if (!data) return
@@ -343,6 +521,230 @@ export default function TeacherClassDetailPage() {
 
           <div className="font-sans text-xs text-text-light">
             En-têtes CSV acceptés : <strong>Nom, Prénom, Entreprise, Ville</strong>.
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-[1.45fr_1fr] gap-6">
+        <div className="bg-card rounded-2xl border border-gray-mid p-5 flex flex-col gap-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="font-serif text-lg font-bold text-navy">Programme de classe par date</h3>
+              <p className="font-sans text-[13px] text-text-mid mt-1">
+                Préparez la séance du jour: objectifs, textes et exercices à ouvrir par les élèves dans leur calendrier.
+              </p>
+            </div>
+            <span className="rounded-md border border-gray-mid bg-off-white px-2.5 py-1 font-sans text-[11px] font-semibold text-text-mid">
+              {sortedPrograms.length} programme(s)
+            </span>
+          </div>
+
+          <div className="flex flex-col gap-2.5 max-h-[540px] overflow-auto pr-1">
+            {sortedPrograms.map((program) => {
+              const date = normalizeDateKey(program.dateKey)
+              const dateValue = date
+                ? (() => {
+                    const [year, month, day] = date.split("-").map((part) => Number.parseInt(part, 10))
+                    return new Date(year, month - 1, day)
+                  })()
+                : null
+              const dateLabel = dateValue
+                ? dateValue.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" })
+                : program.dateKey
+              const isEditing = editingProgramId === program.id
+
+              return (
+                <article
+                  key={program.id}
+                  className={cn(
+                    "rounded-xl border px-3.5 py-3",
+                    isEditing ? "border-navy/45 bg-navy/8" : "border-gray-light bg-off-white",
+                  )}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="font-sans text-[11px] uppercase tracking-[0.06em] text-text-light">{dateLabel}</div>
+                      <div className="font-serif text-[18px] font-bold text-navy leading-snug mt-0.5">{program.title}</div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <ElevateButton variant="outline" size="sm" onClick={() => onEditProgram(program.id)} disabled={busy}>
+                        Modifier
+                      </ElevateButton>
+                      <ElevateButton variant="ghost" size="sm" onClick={() => onDeleteProgram(program.id)} disabled={busy}>
+                        Supprimer
+                      </ElevateButton>
+                    </div>
+                  </div>
+
+                  {!!program.majorPoints && (
+                    <div className="mt-2 rounded-lg border border-violet/30 bg-violet/10 px-2.5 py-2 font-sans text-[12px] text-text-dark whitespace-pre-wrap leading-relaxed">
+                      {program.majorPoints}
+                    </div>
+                  )}
+
+                  {!!program.notes && (
+                    <div className="mt-2 rounded-lg border border-gray-mid bg-white px-2.5 py-2 font-sans text-[12px] text-text-mid whitespace-pre-wrap leading-relaxed">
+                      {program.notes}
+                    </div>
+                  )}
+
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    <span className="inline-flex rounded-md border border-navy/25 bg-navy/8 px-2 py-0.5 font-sans text-[10px] font-semibold text-navy">
+                      {program.assignmentIds.length} exercice(s)
+                    </span>
+                    <span className="inline-flex rounded-md border border-violet/30 bg-violet/10 px-2 py-0.5 font-sans text-[10px] font-semibold text-violet">
+                      {program.documentIds.length} texte(s)
+                    </span>
+                    <span className="inline-flex rounded-md border border-abricot/35 bg-abricot/15 px-2 py-0.5 font-sans text-[10px] font-semibold text-abricot-dark">
+                      {program.quickLinks.length} lien(s) rapide(s)
+                    </span>
+                  </div>
+                </article>
+              )
+            })}
+
+            {!sortedPrograms.length && (
+              <div className="rounded-lg border border-gray-light bg-off-white px-3 py-2.5 font-sans text-sm text-text-mid">
+                Aucun programme défini pour cette classe.
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="bg-card rounded-2xl border border-gray-mid p-5 flex flex-col gap-3">
+          <div>
+            <h3 className="font-serif text-lg font-bold text-navy">
+              {editingProgramId ? "Modifier le programme" : "Nouveau programme"}
+            </h3>
+            <p className="font-sans text-[13px] text-text-mid mt-1">
+              Ce programme sera visible par les élèves lorsqu'ils cliqueront sur la date dans leur calendrier.
+            </p>
+          </div>
+
+          <InputField label="Date de la séance" type="date" value={programDate} onChange={setProgramDate} />
+          <InputField
+            label="Titre de séance"
+            placeholder="ex. Atelier grammaire - Modaux"
+            value={programTitle}
+            onChange={setProgramTitle}
+          />
+
+          <div>
+            <label className="block font-sans text-[13px] font-semibold text-navy tracking-[0.02em] mb-1.5">
+              Points majeurs à retenir
+            </label>
+            <textarea
+              value={programMajorPoints}
+              onChange={(event) => setProgramMajorPoints(event.target.value)}
+              placeholder="Ex. 1) Utiliser can/could selon le contexte 2) Vérifier l'ordre des mots..."
+              className="w-full min-h-[92px] rounded-[10px] border-2 border-gray-mid bg-card px-3 py-2.5 font-sans text-sm text-text-dark placeholder:text-text-light outline-none focus:border-navy"
+            />
+          </div>
+
+          <div>
+            <label className="block font-sans text-[13px] font-semibold text-navy tracking-[0.02em] mb-1.5">
+              Notes de séance
+            </label>
+            <textarea
+              value={programNotes}
+              onChange={(event) => setProgramNotes(event.target.value)}
+              placeholder="Consignes complémentaires, ordre des activités, rappel devoir..."
+              className="w-full min-h-[82px] rounded-[10px] border-2 border-gray-mid bg-card px-3 py-2.5 font-sans text-sm text-text-dark placeholder:text-text-light outline-none focus:border-navy"
+            />
+          </div>
+
+          <div className="rounded-lg border border-gray-light bg-off-white p-2.5">
+            <div className="font-sans text-[12px] font-semibold text-navy mb-1.5">Exercices à faire ce jour</div>
+            <div className="flex flex-col gap-1.5 max-h-[146px] overflow-auto pr-1">
+              {assignableAssignments.map((assignment) => {
+                const checked = programAssignmentIds.includes(assignment.id)
+                return (
+                  <button
+                    key={`program-assignment-${assignment.id}`}
+                    type="button"
+                    onClick={() => setProgramAssignmentIds((prev) => toggleStringValue(prev, assignment.id))}
+                    className={cn(
+                      "rounded-md border px-2.5 py-2 text-left transition-colors",
+                      checked
+                        ? "border-navy/40 bg-navy/8"
+                        : "border-gray-mid bg-white hover:border-navy/25",
+                    )}
+                  >
+                    <div className="font-sans text-[12px] font-semibold text-text-dark">{assignment.title}</div>
+                    <div className="font-sans text-[10px] text-text-light mt-0.5">
+                      {assignment.dueAt ? `Échéance ${new Date(assignment.dueAt).toLocaleDateString("fr-FR")}` : "Sans échéance"}
+                    </div>
+                  </button>
+                )
+              })}
+
+              {!assignableAssignments.length && (
+                <div className="font-sans text-xs text-text-light">Aucun exercice publié disponible.</div>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-gray-light bg-off-white p-2.5">
+            <div className="font-sans text-[12px] font-semibold text-navy mb-1.5">Textes associés</div>
+            <div className="flex flex-col gap-1.5 max-h-[132px] overflow-auto pr-1">
+              {programData.documents.map((document) => {
+                const checked = programDocumentIds.includes(document.id)
+                return (
+                  <button
+                    key={`program-document-${document.id}`}
+                    type="button"
+                    onClick={() => setProgramDocumentIds((prev) => toggleStringValue(prev, document.id))}
+                    className={cn(
+                      "rounded-md border px-2.5 py-1.5 text-left font-sans text-[12px] transition-colors",
+                      checked
+                        ? "border-violet/45 bg-violet/10 text-navy"
+                        : "border-gray-mid bg-white text-text-dark hover:border-violet/35",
+                    )}
+                  >
+                    {document.name}
+                  </button>
+                )
+              })}
+
+              {!programData.documents.length && (
+                <div className="font-sans text-xs text-text-light">Aucun document partagé à cette classe.</div>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-gray-light bg-off-white p-2.5">
+            <div className="font-sans text-[12px] font-semibold text-navy mb-1.5">Liens rapides à afficher</div>
+            <div className="flex flex-col gap-1.5">
+              {programQuickLinkOptions.map((option) => {
+                const checked = programQuickLinks.includes(option.key)
+                return (
+                  <button
+                    key={`quick-link-${option.key}`}
+                    type="button"
+                    onClick={() => setProgramQuickLinks((prev) => toggleQuickLinkValue(prev, option.key))}
+                    className={cn(
+                      "rounded-md border px-2.5 py-1.5 text-left transition-colors",
+                      checked
+                        ? "border-abricot/45 bg-abricot/16"
+                        : "border-gray-mid bg-white hover:border-abricot/35",
+                    )}
+                  >
+                    <div className="font-sans text-[12px] font-semibold text-text-dark">{option.label}</div>
+                    <div className="font-sans text-[10px] text-text-light mt-0.5">{option.description}</div>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <ElevateButton variant="primary" icon={<Icons.Plus />} onClick={onSaveProgram} disabled={busy}>
+              {editingProgramId ? "Mettre à jour" : "Ajouter le programme"}
+            </ElevateButton>
+            <ElevateButton variant="outline" onClick={resetProgramComposer} disabled={busy}>
+              Réinitialiser
+            </ElevateButton>
           </div>
         </div>
       </div>

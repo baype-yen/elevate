@@ -1125,6 +1125,260 @@ export async function fetchTeacherWorkData(
   }
 }
 
+export type TeacherClassProgramQuickLinkKey = "course_exercises" | "quiz_assignments" | "personalized_exercises"
+
+export type TeacherClassProgramRow = {
+  id: string
+  classId: string
+  schoolId: string | null
+  dateKey: string
+  title: string
+  majorPoints: string
+  notes: string
+  assignmentIds: string[]
+  documentIds: string[]
+  quickLinks: TeacherClassProgramQuickLinkKey[]
+  createdAt: string | null
+  updatedAt: string | null
+}
+
+export type TeacherClassProgramComposerData = {
+  programs: TeacherClassProgramRow[]
+  assignments: Array<{
+    id: string
+    title: string
+    type: string
+    dueAt: string | null
+    isPublished: boolean
+  }>
+  documents: Array<{
+    id: string
+    name: string
+    filePath: string
+    sharedAt: string | null
+  }>
+}
+
+function normalizeProgramDateKey(value: string) {
+  const match = (value || "").trim().match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (!match) return ""
+  const date = new Date(Number.parseInt(match[1], 10), Number.parseInt(match[2], 10) - 1, Number.parseInt(match[3], 10))
+  if (Number.isNaN(date.getTime())) return ""
+  return `${match[1]}-${match[2]}-${match[3]}`
+}
+
+function normalizeStringArray(value: unknown) {
+  if (!Array.isArray(value)) return [] as string[]
+  const rows = value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean)
+  return Array.from(new Set(rows))
+}
+
+function normalizeProgramQuickLinks(value: unknown): TeacherClassProgramQuickLinkKey[] {
+  const normalized = normalizeStringArray(value)
+  const allowed = new Set<TeacherClassProgramQuickLinkKey>([
+    "course_exercises",
+    "quiz_assignments",
+    "personalized_exercises",
+  ])
+
+  return normalized.filter((item): item is TeacherClassProgramQuickLinkKey => {
+    return allowed.has(item as TeacherClassProgramQuickLinkKey)
+  })
+}
+
+export async function fetchTeacherClassProgramsData(
+  db: Firestore,
+  classId: string,
+  schoolId?: string | null,
+): Promise<TeacherClassProgramComposerData> {
+  const rawPrograms = await queryDocs(db, "class_programs", where("class_id", "==", classId))
+  const programs = rawPrograms
+    .filter((row: any) => !schoolId || row.school_id === schoolId)
+    .map((row: any) => ({
+      id: row.id,
+      classId: typeof row.class_id === "string" ? row.class_id : classId,
+      schoolId: typeof row.school_id === "string" ? row.school_id : null,
+      dateKey: normalizeProgramDateKey(typeof row.date_key === "string" ? row.date_key : ""),
+      title: typeof row.title === "string" ? row.title : "",
+      majorPoints: typeof row.major_points === "string" ? row.major_points : "",
+      notes: typeof row.notes === "string" ? row.notes : "",
+      assignmentIds: normalizeStringArray(row.assignment_ids),
+      documentIds: normalizeStringArray(row.document_ids),
+      quickLinks: normalizeProgramQuickLinks(row.quick_links),
+      createdAt: toISOString(row.created_at),
+      updatedAt: toISOString(row.updated_at),
+    }))
+    .filter((row: TeacherClassProgramRow) => !!row.dateKey)
+    .sort((left, right) => left.dateKey.localeCompare(right.dateKey))
+
+  let assignments = await queryDocs(db, "assignments", where("class_id", "==", classId))
+  if (schoolId) assignments = assignments.filter((row: any) => row.school_id === schoolId)
+  assignments.sort((left: any, right: any) => {
+    const leftDueAt = toDate(left.due_at)?.getTime() ?? Number.MAX_SAFE_INTEGER
+    const rightDueAt = toDate(right.due_at)?.getTime() ?? Number.MAX_SAFE_INTEGER
+    if (leftDueAt !== rightDueAt) return leftDueAt - rightDueAt
+    const leftTitle = typeof left.title === "string" ? left.title : ""
+    const rightTitle = typeof right.title === "string" ? right.title : ""
+    return leftTitle.localeCompare(rightTitle, "fr")
+  })
+
+  const assignmentRows = assignments.map((assignment: any) => ({
+    id: assignment.id,
+    title: typeof assignment.title === "string" ? assignment.title : "Devoir",
+    type: normalizeAssignmentType(assignment.type),
+    dueAt: toISOString(assignment.due_at),
+    isPublished: !!assignment.is_published,
+  }))
+
+  let shares = await queryDocs(db, "document_shares", where("class_id", "==", classId))
+  if (schoolId) shares = shares.filter((row: any) => row.school_id === schoolId)
+
+  const documentIds = Array.from(
+    new Set(
+      shares
+        .map((share: any) => (typeof share.document_id === "string" ? share.document_id : ""))
+        .filter(Boolean),
+    ),
+  )
+
+  let documents: any[] = []
+  for (const batch of batchIds(documentIds)) {
+    if (!batch.length) continue
+    const rows = await queryDocs(db, "documents", where("__name__", "in", batch))
+    documents.push(...rows)
+  }
+
+  const docById = new Map(documents.map((docRow: any) => [docRow.id, docRow]))
+  const documentRows = documentIds
+    .map((documentId) => {
+      const docRow = docById.get(documentId)
+      if (!docRow) return null
+      const share = shares.find((row: any) => row.document_id === documentId)
+      return {
+        id: documentId,
+        name: typeof docRow.name === "string" ? docRow.name : "Document",
+        filePath: typeof docRow.file_path === "string" ? docRow.file_path : "",
+        sharedAt: toISOString(share?.created_at),
+      }
+    })
+    .filter((row): row is { id: string; name: string; filePath: string; sharedAt: string | null } => !!row)
+    .sort((left, right) => left.name.localeCompare(right.name, "fr"))
+
+  return {
+    programs,
+    assignments: assignmentRows,
+    documents: documentRows,
+  }
+}
+
+export async function createTeacherClassProgram(
+  db: Firestore,
+  input: {
+    classId: string
+    schoolId?: string | null
+    teacherId: string
+    dateKey: string
+    title: string
+    majorPoints?: string
+    notes?: string
+    assignmentIds?: string[]
+    documentIds?: string[]
+    quickLinks?: TeacherClassProgramQuickLinkKey[]
+  },
+) {
+  const dateKey = normalizeProgramDateKey(input.dateKey)
+  if (!dateKey) throw new Error("Date du programme invalide.")
+
+  const title = (input.title || "").trim()
+  if (!title) throw new Error("Le titre du programme est obligatoire.")
+
+  const assignmentIds = normalizeStringArray(input.assignmentIds)
+  const documentIds = normalizeStringArray(input.documentIds)
+  const quickLinks = normalizeProgramQuickLinks(input.quickLinks)
+
+  const existing = await queryDocs(db, "class_programs", where("class_id", "==", input.classId))
+  const hasSameDate = existing.some((row: any) => normalizeProgramDateKey(typeof row.date_key === "string" ? row.date_key : "") === dateKey)
+
+  if (hasSameDate) {
+    throw new Error("Un programme existe déjà pour cette classe à cette date.")
+  }
+
+  const docRef = await addDoc(collection(db, "class_programs"), {
+    class_id: input.classId,
+    school_id: input.schoolId || null,
+    teacher_id: input.teacherId,
+    date_key: dateKey,
+    title,
+    major_points: (input.majorPoints || "").trim(),
+    notes: (input.notes || "").trim(),
+    assignment_ids: assignmentIds,
+    document_ids: documentIds,
+    quick_links: quickLinks,
+    created_at: serverTimestamp(),
+    updated_at: serverTimestamp(),
+  })
+
+  return docRef.id
+}
+
+export async function updateTeacherClassProgram(
+  db: Firestore,
+  programId: string,
+  input: {
+    dateKey: string
+    title: string
+    majorPoints?: string
+    notes?: string
+    assignmentIds?: string[]
+    documentIds?: string[]
+    quickLinks?: TeacherClassProgramQuickLinkKey[]
+  },
+) {
+  const dateKey = normalizeProgramDateKey(input.dateKey)
+  if (!dateKey) throw new Error("Date du programme invalide.")
+
+  const title = (input.title || "").trim()
+  if (!title) throw new Error("Le titre du programme est obligatoire.")
+
+  const currentSnap = await getDoc(doc(db, "class_programs", programId))
+  if (!currentSnap.exists()) {
+    throw new Error("Programme introuvable.")
+  }
+
+  const currentProgram = currentSnap.data() as any
+  const classId = typeof currentProgram.class_id === "string" ? currentProgram.class_id : ""
+
+  if (classId) {
+    const sameClassRows = await queryDocs(db, "class_programs", where("class_id", "==", classId))
+    const duplicate = sameClassRows.some((row: any) => {
+      if (row.id === programId) return false
+      return normalizeProgramDateKey(typeof row.date_key === "string" ? row.date_key : "") === dateKey
+    })
+
+    if (duplicate) {
+      throw new Error("Un autre programme existe déjà à cette date pour cette classe.")
+    }
+  }
+
+  await updateDoc(doc(db, "class_programs", programId), {
+    date_key: dateKey,
+    title,
+    major_points: (input.majorPoints || "").trim(),
+    notes: (input.notes || "").trim(),
+    assignment_ids: normalizeStringArray(input.assignmentIds),
+    document_ids: normalizeStringArray(input.documentIds),
+    quick_links: normalizeProgramQuickLinks(input.quickLinks),
+    updated_at: serverTimestamp(),
+  })
+}
+
+export async function deleteTeacherClassProgram(db: Firestore, programId: string) {
+  await deleteDoc(doc(db, "class_programs", programId))
+}
+
 export async function fetchTeacherCourseExercisesData(
   db: Firestore,
   userId: string,
@@ -2302,24 +2556,490 @@ export async function fetchStudentCalendarData(
   userId: string,
   monthStart: Date,
   monthEnd: Date,
+  schoolId?: string | null,
 ) {
-  const data = await queryDocs(
-    db,
-    "practice_daily",
-    where("user_id", "==", userId),
-    where("practice_date", ">=", monthStart.toISOString().slice(0, 10)),
-    where("practice_date", "<=", monthEnd.toISOString().slice(0, 10)),
-  )
+  type CalendarTaskKind = "assignment" | "course_exercise" | "personalized_exercise" | "quick_link"
+  type CalendarTaskDocument = {
+    id: string
+    name: string
+    filePath: string
+    mimeType: string | null
+    sizeBytes: number | null
+  }
 
-  const map: Record<number, { count: number; type: "full" | "partial" | "missed" }> = {}
-  for (const row of data) {
-    const day = new Date(row.practice_date).getDate()
-    map[day] = {
-      count: row.completed_count || 0,
-      type: (row.status as "full" | "partial" | "missed") || "missed",
+  type CalendarTask = {
+    id: string
+    kind: CalendarTaskKind
+    title: string
+    subtitle: string
+    className: string
+    dueAt: string | null
+    href: string
+    completed: boolean
+    trackCompletion: boolean
+    documents: CalendarTaskDocument[]
+  }
+
+  type CalendarDayStatus = "planned" | "full" | "partial" | "missed"
+
+  type CalendarProgramSession = {
+    id: string
+    classId: string
+    className: string
+    dateKey: string
+    title: string
+    majorPoints: string
+    notes: string
+    status: CalendarDayStatus
+    totalCount: number
+    completedCount: number
+    completionRatio: number
+    tasks: CalendarTask[]
+    documents: CalendarTaskDocument[]
+  }
+
+  type CalendarProgramDay = {
+    dateKey: string
+    dateLabel: string
+    totalCount: number
+    completedCount: number
+    completionRatio: number
+    status: CalendarDayStatus
+    sessions: CalendarProgramSession[]
+    tasks: CalendarTask[]
+    documents: CalendarTaskDocument[]
+  }
+
+  const emptyPayload = () => ({
+    days: {} as Record<number, { totalCount: number; completedCount: number; status: CalendarDayStatus }>,
+    programsByDate: {} as Record<string, CalendarProgramDay>,
+    unscheduledTasks: [] as CalendarTask[],
+  })
+
+  const safeQueryDocs = async (collectionName: string, ...constraints: any[]) => {
+    try {
+      return await queryDocs(db, collectionName, ...constraints)
+    } catch {
+      return [] as any[]
     }
   }
-  return map
+
+  const normalizeText = (value: unknown, max = 120) => {
+    const cleaned = typeof value === "string"
+      ? value.replace(/\s+/g, " ").trim()
+      : ""
+    if (cleaned.length <= max) return cleaned
+    return `${cleaned.slice(0, max - 3)}...`
+  }
+
+  const dateKey = (value: Date) => {
+    const year = value.getFullYear()
+    const month = String(value.getMonth() + 1).padStart(2, "0")
+    const day = String(value.getDate()).padStart(2, "0")
+    return `${year}-${month}-${day}`
+  }
+
+  const parseDateKey = (value: string) => {
+    const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+    if (!match) return null
+    const year = Number.parseInt(match[1], 10)
+    const month = Number.parseInt(match[2], 10)
+    const day = Number.parseInt(match[3], 10)
+    return new Date(year, month - 1, day)
+  }
+
+  const taskHrefForAssignmentType = (type: string, assignmentId: string) => {
+    const normalized = normalizeAssignmentType(type)
+    const tab = normalized === "reading"
+      ? "reading"
+      : normalized === "writing" || normalized === "project"
+      ? "writing"
+      : "quiz"
+    return `/student/exercises?tab=${tab}&assignment=${assignmentId}`
+  }
+
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const todayKey = dateKey(today)
+  const monthStartKey = dateKey(new Date(monthStart.getFullYear(), monthStart.getMonth(), monthStart.getDate()))
+  const monthEndKey = dateKey(new Date(monthEnd.getFullYear(), monthEnd.getMonth(), monthEnd.getDate()))
+
+  const statusForProgress = (dayKey: string, completedCount: number, totalCount: number): CalendarDayStatus => {
+    if (totalCount <= 0) return "planned"
+    if (completedCount >= totalCount) return "full"
+    if (dayKey > todayKey) return "planned"
+    if (completedCount > 0) return "partial"
+    return "missed"
+  }
+
+  const quickLinkConfig: Record<TeacherClassProgramQuickLinkKey, {
+    kind: CalendarTaskKind
+    title: string
+    subtitle: string
+    href: string
+  }> = {
+    course_exercises: {
+      kind: "course_exercise",
+      title: "Exercices basés sur les cours",
+      subtitle: "Travail guidé à partir des documents vus en classe.",
+      href: "/student/course-exercises",
+    },
+    quiz_assignments: {
+      kind: "assignment",
+      title: "Quiz / grammaire de la séance",
+      subtitle: "Vérifie les acquis essentiels de la séance.",
+      href: "/student/exercises?tab=quiz",
+    },
+    personalized_exercises: {
+      kind: "personalized_exercise",
+      title: "Remédiation personnalisée",
+      subtitle: "Consolide tes points de progression ciblés.",
+      href: "/student/exercises?tab=personalized",
+    },
+  }
+
+  const enrollments = await safeQueryDocs(
+    "class_enrollments",
+    where("student_id", "==", userId),
+    where("status", "==", "active"),
+  )
+
+  const enrolledClassIds = Array.from(
+    new Set(
+      enrollments
+        .map((enrollment: any) => (typeof enrollment.class_id === "string" ? enrollment.class_id : ""))
+        .filter(Boolean),
+    ),
+  )
+
+  if (!enrolledClassIds.length) {
+    return emptyPayload()
+  }
+
+  let classes: any[] = []
+  for (const batch of batchIds(enrolledClassIds)) {
+    if (!batch.length) continue
+    const rows = await safeQueryDocs("classes", where("__name__", "in", batch), where("archived_at", "==", null))
+    classes.push(...rows)
+  }
+
+  classes = classes.filter((classRow: any) => {
+    if (classRow.archived_at) return false
+    if (schoolId && classRow.school_id !== schoolId) return false
+    return true
+  })
+
+  const classIds = classes.map((classRow: any) => classRow.id)
+  const classNameById = new Map(classes.map((classRow: any) => [classRow.id, classRow.name || "Classe"]))
+
+  if (!classIds.length) {
+    return emptyPayload()
+  }
+
+  let rawPrograms: any[] = []
+  for (const batch of batchIds(classIds)) {
+    if (!batch.length) continue
+    const rows = await safeQueryDocs("class_programs", where("class_id", "in", batch))
+    rawPrograms.push(...rows)
+  }
+
+  const programs = rawPrograms
+    .filter((row: any) => {
+      if (schoolId && row.school_id !== schoolId) return false
+      const rowDateKey = normalizeProgramDateKey(typeof row.date_key === "string" ? row.date_key : "")
+      if (!rowDateKey) return false
+      return rowDateKey >= monthStartKey && rowDateKey <= monthEndKey
+    })
+    .map((row: any) => ({
+      id: row.id,
+      classId: typeof row.class_id === "string" ? row.class_id : "",
+      dateKey: normalizeProgramDateKey(typeof row.date_key === "string" ? row.date_key : ""),
+      title: typeof row.title === "string" ? row.title : "Séance de classe",
+      majorPoints: typeof row.major_points === "string" ? row.major_points : "",
+      notes: typeof row.notes === "string" ? row.notes : "",
+      assignmentIds: normalizeStringArray(row.assignment_ids),
+      documentIds: normalizeStringArray(row.document_ids),
+      quickLinks: normalizeProgramQuickLinks(row.quick_links),
+    }))
+    .filter((program) => !!program.classId && !!program.dateKey)
+    .sort((left, right) => {
+      if (left.dateKey !== right.dateKey) return left.dateKey.localeCompare(right.dateKey)
+      return (classNameById.get(left.classId) || "").localeCompare(classNameById.get(right.classId) || "", "fr")
+    })
+
+  if (!programs.length) {
+    return emptyPayload()
+  }
+
+  const assignmentIds = Array.from(
+    new Set(programs.flatMap((program) => program.assignmentIds).filter(Boolean)),
+  )
+
+  const programDocumentIds = Array.from(
+    new Set(programs.flatMap((program) => program.documentIds).filter(Boolean)),
+  )
+
+  let assignments: any[] = []
+  for (const batch of batchIds(assignmentIds)) {
+    if (!batch.length) continue
+    const rows = await safeQueryDocs("assignments", where("__name__", "in", batch))
+    assignments.push(...rows)
+  }
+
+  assignments = assignments.filter((assignment: any) => {
+    if (!classIds.includes(assignment.class_id)) return false
+    if (schoolId && assignment.school_id !== schoolId) return false
+    if (assignment.is_published === false) return false
+    return true
+  })
+
+  const assignmentById = new Map(assignments.map((assignment: any) => [assignment.id, assignment]))
+
+  let submissions: any[] = []
+  if (assignmentIds.length) {
+    for (const batch of batchIds(assignmentIds)) {
+      if (!batch.length) continue
+      const rows = await safeQueryDocs(
+        "submissions",
+        where("student_id", "==", userId),
+        where("assignment_id", "in", batch),
+      )
+      submissions.push(...rows)
+    }
+  }
+
+  const submissionByAssignmentId = new Map<string, any[]>()
+  for (const submission of submissions) {
+    const assignmentId = typeof submission.assignment_id === "string" ? submission.assignment_id : ""
+    if (!assignmentId) continue
+    const rows = submissionByAssignmentId.get(assignmentId) || []
+    rows.push(submission)
+    submissionByAssignmentId.set(assignmentId, rows)
+  }
+
+  const latestSubmissionByAssignment = new Map<string, any>()
+  for (const [assignmentId, rows] of submissionByAssignmentId.entries()) {
+    const latest = [...rows].sort((left: any, right: any) => {
+      const leftDate = toDate(left.updated_at || left.submitted_at || left.created_at)?.getTime() || 0
+      const rightDate = toDate(right.updated_at || right.submitted_at || right.created_at)?.getTime() || 0
+      return rightDate - leftDate
+    })[0]
+    latestSubmissionByAssignment.set(assignmentId, latest)
+  }
+
+  let assignmentShares: any[] = []
+  if (assignmentIds.length) {
+    for (const batch of batchIds(assignmentIds)) {
+      if (!batch.length) continue
+      const rows = await safeQueryDocs("document_shares", where("assignment_id", "in", batch))
+      assignmentShares.push(...rows)
+    }
+
+    if (schoolId) {
+      assignmentShares = assignmentShares.filter((row: any) => row.school_id === schoolId)
+    }
+  }
+
+  const assignmentDocumentIds = Array.from(
+    new Set(
+      assignmentShares
+        .map((share: any) => (typeof share.document_id === "string" ? share.document_id : ""))
+        .filter(Boolean),
+    ),
+  )
+
+  const allDocumentIds = Array.from(new Set([...programDocumentIds, ...assignmentDocumentIds]))
+
+  let allDocuments: any[] = []
+  for (const batch of batchIds(allDocumentIds)) {
+    if (!batch.length) continue
+    const rows = await safeQueryDocs("documents", where("__name__", "in", batch))
+    allDocuments.push(...rows)
+  }
+
+  const documentById = new Map(allDocuments.map((documentRow: any) => [documentRow.id, documentRow]))
+  const documentsByAssignmentId = new Map<string, CalendarTaskDocument[]>()
+
+  for (const share of assignmentShares) {
+    const assignmentId = typeof share.assignment_id === "string" ? share.assignment_id : ""
+    const documentId = typeof share.document_id === "string" ? share.document_id : ""
+    if (!assignmentId || !documentId) continue
+
+    const documentRow = documentById.get(documentId)
+    if (!documentRow) continue
+
+    const rows = documentsByAssignmentId.get(assignmentId) || []
+    if (!rows.some((row) => row.id === documentRow.id)) {
+      rows.push({
+        id: documentRow.id,
+        name: typeof documentRow.name === "string" ? documentRow.name : "Document",
+        filePath: typeof documentRow.file_path === "string" ? documentRow.file_path : "",
+        mimeType: typeof documentRow.mime_type === "string" ? documentRow.mime_type : null,
+        sizeBytes: typeof documentRow.size_bytes === "number" ? documentRow.size_bytes : null,
+      })
+    }
+    documentsByAssignmentId.set(assignmentId, rows)
+  }
+
+  const sessionsByDate = new Map<string, CalendarProgramSession[]>()
+
+  for (const program of programs) {
+    const className = classNameById.get(program.classId) || "Classe"
+
+    const sessionDocuments = program.documentIds
+      .map((documentId) => {
+        const documentRow = documentById.get(documentId)
+        if (!documentRow) return null
+        const filePath = typeof documentRow.file_path === "string" ? documentRow.file_path : ""
+        if (!filePath) return null
+
+        return {
+          id: documentRow.id,
+          name: typeof documentRow.name === "string" ? documentRow.name : "Document",
+          filePath,
+          mimeType: typeof documentRow.mime_type === "string" ? documentRow.mime_type : null,
+          sizeBytes: typeof documentRow.size_bytes === "number" ? documentRow.size_bytes : null,
+        }
+      })
+      .filter((row): row is CalendarTaskDocument => !!row)
+
+    const sessionTasks: CalendarTask[] = []
+
+    for (const assignmentId of program.assignmentIds) {
+      const assignment = assignmentById.get(assignmentId)
+      if (!assignment) continue
+
+      const submission = latestSubmissionByAssignment.get(assignmentId)
+      const completed = !!submission && (submission.status === "submitted" || submission.status === "graded")
+
+      sessionTasks.push({
+        id: `assignment:${assignment.id}`,
+        kind: "assignment",
+        title: typeof assignment.title === "string" && assignment.title.trim().length
+          ? assignment.title
+          : "Devoir",
+        subtitle: normalizeText(assignment.description, 120) || "Exercice de classe à finaliser.",
+        className,
+        dueAt: toISOString(assignment.due_at),
+        href: taskHrefForAssignmentType(assignment.type, assignment.id),
+        completed,
+        trackCompletion: true,
+        documents: documentsByAssignmentId.get(assignment.id) || [],
+      })
+    }
+
+    for (const quickLink of program.quickLinks) {
+      const config = quickLinkConfig[quickLink]
+      if (!config) continue
+
+      sessionTasks.push({
+        id: `quick:${program.id}:${quickLink}`,
+        kind: config.kind,
+        title: config.title,
+        subtitle: config.subtitle,
+        className,
+        dueAt: null,
+        href: config.href,
+        completed: false,
+        trackCompletion: false,
+        documents: [],
+      })
+    }
+
+    sessionTasks.sort((left, right) => {
+      if (left.trackCompletion !== right.trackCompletion) return left.trackCompletion ? -1 : 1
+      if (left.completed !== right.completed) return left.completed ? 1 : -1
+      return left.title.localeCompare(right.title, "fr")
+    })
+
+    const trackableTasks = sessionTasks.filter((task) => task.trackCompletion)
+    const completedCount = trackableTasks.filter((task) => task.completed).length
+    const totalCount = trackableTasks.length
+    const completionRatio = totalCount ? Math.round((completedCount / totalCount) * 100) : 0
+
+    const session: CalendarProgramSession = {
+      id: program.id,
+      classId: program.classId,
+      className,
+      dateKey: program.dateKey,
+      title: (program.title || "").trim() || "Programme de séance",
+      majorPoints: (program.majorPoints || "").trim(),
+      notes: (program.notes || "").trim(),
+      status: statusForProgress(program.dateKey, completedCount, totalCount),
+      totalCount,
+      completedCount,
+      completionRatio,
+      tasks: sessionTasks,
+      documents: sessionDocuments,
+    }
+
+    const rows = sessionsByDate.get(program.dateKey) || []
+    rows.push(session)
+    sessionsByDate.set(program.dateKey, rows)
+  }
+
+  const sortedDateKeys = Array.from(sessionsByDate.keys()).sort((left, right) => left.localeCompare(right))
+  const days: Record<number, { totalCount: number; completedCount: number; status: CalendarDayStatus }> = {}
+  const programsByDate: Record<string, CalendarProgramDay> = {}
+
+  for (const key of sortedDateKeys) {
+    const dayDate = parseDateKey(key)
+    if (!dayDate) continue
+
+    const sessions = (sessionsByDate.get(key) || [])
+      .sort((left, right) => left.className.localeCompare(right.className, "fr"))
+
+    const totalCount = sessions.reduce((sum, session) => sum + session.totalCount, 0)
+    const completedCount = sessions.reduce((sum, session) => sum + session.completedCount, 0)
+    const completionRatio = totalCount ? Math.round((completedCount / totalCount) * 100) : 0
+
+    const tasks = sessions
+      .flatMap((session) => session.tasks)
+      .sort((left, right) => {
+        if (left.trackCompletion !== right.trackCompletion) return left.trackCompletion ? -1 : 1
+        if (left.completed !== right.completed) return left.completed ? 1 : -1
+        return left.title.localeCompare(right.title, "fr")
+      })
+
+    const documents = Array.from(
+      new Map(
+        sessions
+          .flatMap((session) => session.documents)
+          .filter((documentRow) => !!documentRow.filePath)
+          .map((documentRow) => [documentRow.id, documentRow]),
+      ).values(),
+    )
+
+    const status = statusForProgress(key, completedCount, totalCount)
+
+    programsByDate[key] = {
+      dateKey: key,
+      dateLabel: dayDate.toLocaleDateString("fr-FR", {
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+      }),
+      totalCount,
+      completedCount,
+      completionRatio,
+      status,
+      sessions,
+      tasks,
+      documents,
+    }
+
+    days[dayDate.getDate()] = {
+      totalCount,
+      completedCount,
+      status,
+    }
+  }
+
+  return {
+    days,
+    programsByDate,
+    unscheduledTasks: [] as CalendarTask[],
+  }
 }
 
 export async function fetchStudentExercisesData(db: Firestore, userId: string, schoolId?: string | null) {

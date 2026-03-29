@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { FieldValue } from "firebase-admin/firestore"
-import { adminAuth, adminDb } from "@/lib/firebase/admin"
+import { adminDb } from "@/lib/firebase/admin"
+import { verifyRequestBearerToken } from "@/lib/firebase/request-auth"
 import {
   courseMaterialTypeLabel,
   courseTopicLabel,
@@ -16,17 +17,6 @@ type GenerateCourseExercisesPayload = {
 
 function badRequest(message: string) {
   return NextResponse.json({ error: message }, { status: 400 })
-}
-
-async function getCallerUid(request: Request): Promise<string | null> {
-  const authorization = request.headers.get("authorization")
-  if (!authorization?.startsWith("Bearer ")) return null
-  try {
-    const decoded = await adminAuth.verifyIdToken(authorization.slice(7))
-    return decoded.uid
-  } catch {
-    return null
-  }
 }
 
 function resolveDocumentContent(document: any): { textContent: string } {
@@ -61,10 +51,11 @@ export async function POST(request: Request) {
     return badRequest("documentId est obligatoire.")
   }
 
-  const callerUid = await getCallerUid(request)
-  if (!callerUid) {
-    return NextResponse.json({ error: "Non autorisé." }, { status: 401 })
+  const authResult = await verifyRequestBearerToken(request)
+  if (!authResult.ok) {
+    return NextResponse.json({ error: authResult.error }, { status: authResult.status })
   }
+  const callerUid = authResult.uid
 
   const documentSnap = await adminDb.collection("documents").doc(documentId).get()
   if (!documentSnap.exists) {

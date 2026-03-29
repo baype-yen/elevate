@@ -34,22 +34,6 @@ type StudentGrammarLessonRow = {
 
 type TopicBucketKey = CourseTopicKey | "other"
 
-type SelfCheckState = {
-  reformulateRule: boolean
-  ownExample: boolean
-  usageContext: boolean
-  personalExampleText: string
-  takeawayText: string
-}
-
-const DEFAULT_SELF_CHECK_STATE: SelfCheckState = {
-  reformulateRule: false,
-  ownExample: false,
-  usageContext: false,
-  personalExampleText: "",
-  takeawayText: "",
-}
-
 function topicLabel(topicKey: TopicBucketKey) {
   if (topicKey === "other") return "Autres leçons"
   const configuredLabel = COURSE_TOPIC_OPTIONS.find((topic) => topic.value === topicKey)?.label || "Thème"
@@ -359,9 +343,195 @@ function renderImportantText(text: string, keyPrefix: string): ReactNode {
   })
 }
 
-function completionRatio(state: SelfCheckState) {
-  const doneCount = [state.reformulateRule, state.ownExample, state.usageContext].filter(Boolean).length
-  return Math.round((doneCount / 3) * 100)
+type AutoExercise = {
+  id: string
+  prompt: string
+  choices: string[]
+  correctIndex: number
+  explanation: string
+}
+
+function normalizeExerciseText(value: string, max = 160) {
+  const cleaned = stripInlineBoldMarkers(value || "").replace(/\s+/g, " ").trim()
+  if (!cleaned.length) return ""
+  if (cleaned.length <= max) return cleaned
+  return `${cleaned.slice(0, max - 3)}...`
+}
+
+function firstSentence(value: string) {
+  const cleaned = normalizeExerciseText(value, 220)
+  if (!cleaned) return ""
+
+  const sentenceMatch = cleaned.match(/^(.+?[.!?])(?:\s|$)/)
+  if (sentenceMatch) return sentenceMatch[1].trim()
+  return cleaned
+}
+
+function stableHash(value: string) {
+  let hash = 0
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) >>> 0
+  }
+  return hash
+}
+
+function buildChoiceSet(correct: string, wrongCandidates: string[], seedSource: string) {
+  const normalizedCorrect = normalizeExerciseText(correct)
+  const wrongs = Array.from(
+    new Set(
+      wrongCandidates
+        .map((candidate) => normalizeExerciseText(candidate))
+        .filter((candidate) => !!candidate && candidate !== normalizedCorrect),
+    ),
+  ).slice(0, 3)
+
+  const fallbackWrongs = [
+    "Traduire mot à mot sans analyser la structure.",
+    "Ignorer le contexte de la phrase.",
+    "Mélanger les temps sans repère clair.",
+  ]
+
+  for (const fallback of fallbackWrongs) {
+    if (wrongs.length >= 3) break
+    const candidate = normalizeExerciseText(fallback)
+    if (candidate && candidate !== normalizedCorrect && !wrongs.includes(candidate)) {
+      wrongs.push(candidate)
+    }
+  }
+
+  const options = [normalizedCorrect, ...wrongs].slice(0, 4)
+  const shift = options.length ? stableHash(seedSource) % options.length : 0
+  const choices = options.map((_, index) => options[(index + shift) % options.length])
+
+  return {
+    choices,
+    correctIndex: choices.indexOf(normalizedCorrect),
+  }
+}
+
+function extractKeyPoints(section: LessonSection, methodology: SectionMethodology | null) {
+  const points: string[] = []
+
+  if (methodology?.goal) {
+    points.push(firstSentence(methodology.goal))
+  }
+
+  if (methodology?.structure?.length) {
+    points.push(`Structure clé : ${methodology.structure.join(" + ")}.`)
+  }
+
+  for (const block of section.blocks) {
+    if (block.type === "callout") {
+      points.push(firstSentence(block.text))
+      continue
+    }
+
+    if (block.type === "list") {
+      for (const item of block.items.slice(0, 3)) {
+        points.push(firstSentence(item))
+      }
+      continue
+    }
+
+    if (block.type === "paragraph") {
+      points.push(firstSentence(block.text))
+      continue
+    }
+
+    if (block.type === "table") {
+      const preview = block.headers.slice(0, 3).map((value) => normalizeExerciseText(value, 50)).join(" - ")
+      if (preview) points.push(`Repère le tableau : ${preview}.`)
+    }
+  }
+
+  return Array.from(
+    new Set(
+      points
+        .map((point) => normalizeExerciseText(point, 140))
+        .filter(Boolean),
+    ),
+  ).slice(0, 5)
+}
+
+function buildAutoExercises(params: {
+  section: LessonSection
+  methodology: SectionMethodology | null
+  keyPoints: string[]
+  examples: string[]
+}): AutoExercise[] {
+  const { section, methodology, keyPoints, examples } = params
+
+  const goal = normalizeExerciseText(
+    methodology?.goal || "Appliquer correctement la règle de la section dans une phrase claire.",
+    150,
+  )
+
+  const structure = methodology?.structure?.length
+    ? methodology.structure.join(" + ")
+    : "Sujet + Verbe + Complément"
+
+  const sectionMainPoint = keyPoints[0] || "Identifier la structure avant de répondre."
+  const sectionExample = normalizeExerciseText(examples[0] || "I choose the right structure before writing.", 150)
+
+  const structureParts = structure.split("+").map((part) => part.trim()).filter(Boolean)
+  const reversedStructure = structureParts.length > 1
+    ? [...structureParts].reverse().join(" + ")
+    : "Verbe + Sujet + Complément"
+
+  const exerciseAChoices = buildChoiceSet(goal, [
+    "Mémoriser du vocabulaire sans appliquer la règle.",
+    "Écrire rapidement sans vérifier la structure.",
+    "Traduire mot à mot sans tenir compte du contexte.",
+  ], `${section.id}-goal`)
+
+  const exerciseBChoices = buildChoiceSet(structure, [
+    reversedStructure,
+    "Verbe + Sujet + Complément",
+    "Sujet + Complément (sans verbe)",
+  ], `${section.id}-structure`)
+
+  const exerciseCChoices = buildChoiceSet(sectionMainPoint, [
+    "Il faut ignorer la ponctuation pour aller plus vite.",
+    "Toutes les réponses sont valides si la phrase est longue.",
+    "Le contexte n'a pas d'importance pour choisir la forme.",
+  ], `${section.id}-point`)
+
+  const exerciseDChoices = buildChoiceSet(sectionExample, [
+    "Yesterday I will go to school and maybe gone.",
+    "The cat in office because words without link.",
+    "Je mélange les temps sans vérifier la règle de la section.",
+  ], `${section.id}-example`)
+
+  return [
+    {
+      id: "goal",
+      prompt: "Quel est l'objectif principal de cette section ?",
+      choices: exerciseAChoices.choices,
+      correctIndex: exerciseAChoices.correctIndex,
+      explanation: "Commence toujours par l'objectif de la règle avant de produire ta phrase.",
+    },
+    {
+      id: "structure",
+      prompt: "Quelle structure faut-il garder en tête ?",
+      choices: exerciseBChoices.choices,
+      correctIndex: exerciseBChoices.correctIndex,
+      explanation: "Retenir la structure réduit les erreurs de forme et d'ordre des mots.",
+    },
+    {
+      id: "point",
+      prompt: "Quel point fait partie de la fiche 'À retenir' ?",
+      choices: exerciseCChoices.choices,
+      correctIndex: exerciseCChoices.correctIndex,
+      explanation: "Les points à retenir résument ce qu'il faut appliquer dans tous les exercices.",
+    },
+    {
+      id: "example",
+      prompt: "Quel exemple est cohérent avec la section ?",
+      choices: exerciseDChoices.choices,
+      correctIndex: exerciseDChoices.correctIndex,
+      explanation: "Repérer un bon exemple aide à reproduire la même logique dans tes propres phrases.",
+    },
+  ]
 }
 
 export default function StudentGrammarLessonsPage() {
@@ -374,8 +544,9 @@ export default function StudentGrammarLessonsPage() {
   const [activeTopicKey, setActiveTopicKey] = useState<TopicBucketKey | null>(null)
   const [selectedLessonId, setSelectedLessonId] = useState<string | null>(null)
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null)
-  const [expandedSectionByKey, setExpandedSectionByKey] = useState<Record<string, boolean>>({})
-  const [selfCheckBySection, setSelfCheckBySection] = useState<Record<string, SelfCheckState>>({})
+  const [summaryQuery, setSummaryQuery] = useState("")
+  const [exerciseAnswersBySection, setExerciseAnswersBySection] = useState<Record<string, Record<string, number>>>({})
+  const [exerciseCheckedBySection, setExerciseCheckedBySection] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
     if (!context) return
@@ -464,6 +635,32 @@ export default function StudentGrammarLessonsPage() {
     : null
 
   const selectedSections = selectedLessonParsed?.sections || []
+  const normalizedSummaryQuery = normalizedForMethodology(summaryQuery)
+
+  const visibleLessons = useMemo(() => {
+    const topicRows = activeTopicKey ? lessonsByTopic.get(activeTopicKey) || [] : []
+    if (!normalizedSummaryQuery) return topicRows
+
+    return topicRows.filter((lesson) => {
+      if (normalizedForMethodology(lesson.name).includes(normalizedSummaryQuery)) return true
+
+      const parsed = parsedByLessonId.get(lesson.id)
+      if (!parsed) return false
+
+      return parsed.sections.some((section) => {
+        const titleMatch = normalizedForMethodology(section.title).includes(normalizedSummaryQuery)
+        const leadMatch = normalizedForMethodology(sectionLead(section)).includes(normalizedSummaryQuery)
+        return titleMatch || leadMatch
+      })
+    })
+  }, [activeTopicKey, lessonsByTopic, normalizedSummaryQuery, parsedByLessonId])
+
+  useEffect(() => {
+    if (!visibleLessons.length) return
+    if (!selectedLessonId || !visibleLessons.some((lesson) => lesson.id === selectedLessonId)) {
+      setSelectedLessonId(visibleLessons[0].id)
+    }
+  }, [visibleLessons, selectedLessonId])
 
   useEffect(() => {
     if (!selectedLesson || !selectedSections.length) {
@@ -479,65 +676,95 @@ export default function StudentGrammarLessonsPage() {
 
   const activeSection = selectedSections.find((section) => section.id === selectedSectionId) || null
 
-  const activeSectionKey = selectedLesson && activeSection
+  const activeSectionStorageKey = selectedLesson && activeSection
     ? sectionStorageKey(selectedLesson.id, activeSection.id)
     : null
 
-  const activeSelfCheckState = activeSectionKey
-    ? selfCheckBySection[activeSectionKey] || DEFAULT_SELF_CHECK_STATE
-    : DEFAULT_SELF_CHECK_STATE
+  const activeQuizStateKey = activeSectionStorageKey ? `${activeSectionStorageKey}:quiz` : null
 
-  const updateSelfCheck = (patch: Partial<SelfCheckState>) => {
-    if (!activeSectionKey) return
+  const activeExamples = activeSection?.examples.length
+    ? activeSection.examples
+    : selectedSections.flatMap((section) => section.examples).slice(0, 6)
 
-    setSelfCheckBySection((previous) => ({
+  const activeMethodology = activeSection ? resolveSectionMethodology(activeSection) : null
+  const activeKeyPoints = activeSection ? extractKeyPoints(activeSection, activeMethodology) : []
+  const autoExercises = activeSection
+    ? buildAutoExercises({
+        section: activeSection,
+        methodology: activeMethodology,
+        keyPoints: activeKeyPoints,
+        examples: activeExamples,
+      })
+    : []
+
+  const activeQuizAnswers = activeQuizStateKey ? exerciseAnswersBySection[activeQuizStateKey] || {} : {}
+  const activeQuizChecked = activeQuizStateKey ? !!exerciseCheckedBySection[activeQuizStateKey] : false
+
+  const answeredExerciseCount = autoExercises.reduce((sum, exercise) => (
+    typeof activeQuizAnswers[exercise.id] === "number" ? sum + 1 : sum
+  ), 0)
+
+  const allExercisesAnswered = autoExercises.length > 0 && answeredExerciseCount === autoExercises.length
+
+  const exerciseScore = autoExercises.reduce((sum, exercise) => {
+    const answer = activeQuizAnswers[exercise.id]
+    return answer === exercise.correctIndex ? sum + 1 : sum
+  }, 0)
+
+  const activeSectionIndex = activeSection
+    ? selectedSections.findIndex((section) => section.id === activeSection.id)
+    : -1
+
+  const quickSummarySections = normalizedSummaryQuery
+    ? selectedSections.filter((section) => {
+      const titleMatch = normalizedForMethodology(section.title).includes(normalizedSummaryQuery)
+      const leadMatch = normalizedForMethodology(sectionLead(section)).includes(normalizedSummaryQuery)
+      return titleMatch || leadMatch
+    })
+    : selectedSections
+
+  const goToSectionAt = (index: number) => {
+    const nextSection = selectedSections[index]
+    if (!nextSection) return
+    setSelectedSectionId(nextSection.id)
+  }
+
+  const setExerciseAnswer = (exerciseId: string, answerIndex: number) => {
+    if (!activeQuizStateKey) return
+
+    setExerciseAnswersBySection((previous) => ({
       ...previous,
-      [activeSectionKey]: {
-        ...DEFAULT_SELF_CHECK_STATE,
-        ...(previous[activeSectionKey] || {}),
-        ...patch,
+      [activeQuizStateKey]: {
+        ...(previous[activeQuizStateKey] || {}),
+        [exerciseId]: answerIndex,
       },
+    }))
+
+    setExerciseCheckedBySection((previous) => ({
+      ...previous,
+      [activeQuizStateKey]: false,
     }))
   }
 
-  const toggleChecklistItem = (field: "reformulateRule" | "ownExample" | "usageContext") => {
-    if (field === "reformulateRule") {
-      updateSelfCheck({ reformulateRule: !activeSelfCheckState.reformulateRule })
-      return
-    }
-
-    if (field === "ownExample") {
-      updateSelfCheck({ ownExample: !activeSelfCheckState.ownExample })
-      return
-    }
-
-    updateSelfCheck({ usageContext: !activeSelfCheckState.usageContext })
-  }
-
-  const sectionProgress = (sectionId: string) => {
-    if (!selectedLesson) return 0
-    const key = sectionStorageKey(selectedLesson.id, sectionId)
-    const state = selfCheckBySection[key]
-    if (!state) return 0
-    return completionRatio(state)
-  }
-
-  const isSectionExpanded = (sectionId: string, index: number) => {
-    if (!selectedLesson) return false
-    const key = sectionStorageKey(selectedLesson.id, sectionId)
-    if (Object.prototype.hasOwnProperty.call(expandedSectionByKey, key)) {
-      return !!expandedSectionByKey[key]
-    }
-    return index < 2
-  }
-
-  const toggleSection = (sectionId: string, index: number) => {
-    if (!selectedLesson) return
-    const key = sectionStorageKey(selectedLesson.id, sectionId)
-    const current = isSectionExpanded(sectionId, index)
-    setExpandedSectionByKey((previous) => ({
+  const validateActiveExercises = () => {
+    if (!activeQuizStateKey) return
+    setExerciseCheckedBySection((previous) => ({
       ...previous,
-      [key]: !current,
+      [activeQuizStateKey]: true,
+    }))
+  }
+
+  const resetActiveExercises = () => {
+    if (!activeQuizStateKey) return
+
+    setExerciseAnswersBySection((previous) => ({
+      ...previous,
+      [activeQuizStateKey]: {},
+    }))
+
+    setExerciseCheckedBySection((previous) => ({
+      ...previous,
+      [activeQuizStateKey]: false,
     }))
   }
 
@@ -554,7 +781,14 @@ export default function StudentGrammarLessonsPage() {
       return (
         <ul key={key} className="list-disc pl-5 space-y-1.5 font-sans text-[14px] text-text-dark leading-relaxed">
           {block.items.map((item, index) => (
-            <li key={`${key}-item-${index}`}>{renderImportantText(item, `${key}-item-${index}`)}</li>
+            <li key={`${key}-item-${index}`}>
+              <span className={cn(
+                "inline",
+                !!getExampleLineParts(item) && "rounded-md border border-abricot/30 bg-abricot/12 px-1.5 py-0.5 italic",
+              )}>
+                {renderImportantText(item, `${key}-item-${index}`)}
+              </span>
+            </li>
           ))}
         </ul>
       )
@@ -619,33 +853,8 @@ export default function StudentGrammarLessonsPage() {
     return <div className="font-sans text-sm text-text-mid">Chargement des leçons...</div>
   }
 
-  const visibleLessons = activeTopicKey ? lessonsByTopic.get(activeTopicKey) || [] : []
-  const activeExamples = activeSection?.examples.length
-    ? activeSection.examples
-    : selectedSections.flatMap((section) => section.examples).slice(0, 6)
-  const activeMethodology = activeSection ? resolveSectionMethodology(activeSection) : null
-
-  const activeSectionIndex = activeSection
-    ? selectedSections.findIndex((section) => section.id === activeSection.id)
-    : -1
-
-  const goToSectionAt = (index: number) => {
-    const nextSection = selectedSections[index]
-    if (!nextSection || !selectedLesson) return
-
-    setSelectedSectionId(nextSection.id)
-    const key = sectionStorageKey(selectedLesson.id, nextSection.id)
-    setExpandedSectionByKey((previous) => ({
-      ...previous,
-      [key]: true,
-    }))
-  }
-
   const lessonCompletion = selectedSections.length
-    ? Math.round(
-      selectedSections.reduce((sum, section) => sum + sectionProgress(section.id), 0)
-      / selectedSections.length,
-    )
+    ? Math.round(((Math.max(activeSectionIndex, 0) + 1) / selectedSections.length) * 100)
     : 0
 
   const readTimeMinutes = selectedSections.length
@@ -706,387 +915,421 @@ export default function StudentGrammarLessonsPage() {
         )}
 
         {!!lessons.length && (
-          <div className="grid grid-cols-1 xl:grid-cols-[270px_1fr] gap-4">
-            <aside className="rounded-[18px] border border-[#d7cfbe] bg-[#f7efde] p-4 flex flex-col gap-4 shadow-[0_8px_22px_rgba(67,58,43,0.07)]">
-              <div>
-                <div className="font-sans text-[12px] uppercase tracking-[0.06em] font-bold text-[#6f6558] mb-2">Sommaire du manuel</div>
-                <div className="flex flex-wrap gap-2">
-                  {availableTopicKeys.map((topicKey) => {
-                    const rows = lessonsByTopic.get(topicKey as TopicBucketKey) || []
-                    const active = activeTopicKey === topicKey
+          <div className="flex flex-col gap-4">
+            <div className="rounded-[18px] border border-[#d7cfbe] bg-[#f7efde] p-4 shadow-[0_8px_22px_rgba(67,58,43,0.07)]">
+              <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
+                <div>
+                  <div className="font-sans text-[12px] uppercase tracking-[0.06em] font-bold text-[#6f6558]">Sommaire de la catégorie</div>
+                  <p className="font-sans text-[12px] text-[#6b6459] mt-1">
+                    Clique sur un thème, puis sur la leçon ou la section recherchée.
+                  </p>
+                </div>
 
-                    return (
-                      <button
-                        key={`topic-${topicKey}`}
-                        type="button"
-                        onClick={() => {
-                          const typedTopic = topicKey as TopicBucketKey
-                          setActiveTopicKey(typedTopic)
-                          if (!rows.length) return
-                          setSelectedLessonId(rows[0].id)
-                        }}
-                        className={cn(
-                          "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 font-sans text-[12px] font-semibold transition-colors",
-                          active
-                            ? "border-[#5d6f95] bg-[#dfe6f6] text-navy"
-                            : "border-[#ccbda3] bg-[#fff8ed] text-[#655d52] hover:border-navy/35 hover:text-navy",
-                        )}
-                      >
-                        <span>{topicLabel(topicKey as TopicBucketKey)}</span>
-                        <span className="rounded-full bg-white px-1.5 py-0.5 text-[10px] text-[#7b756c] border border-[#d8cfbf]">
-                          {rows.length}
-                        </span>
-                      </button>
-                    )
-                  })}
+                <div className="relative w-full md:w-[320px]">
+                  <Icons.Search className="w-4 h-4 text-[#8b8172] absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    value={summaryQuery}
+                    onChange={(event) => setSummaryQuery(event.target.value)}
+                    placeholder="Rechercher un thème, une leçon, une section..."
+                    className="w-full h-10 rounded-lg border border-[#cfbea3] bg-[#fff9ef] pl-9 pr-3 font-sans text-[13px] text-[#4f4b43] placeholder:text-[#958d81] outline-none focus:border-navy"
+                  />
                 </div>
               </div>
 
-              <div className="border-t border-[#d9cfbf] pt-3">
-                <div className="font-sans text-[12px] uppercase tracking-[0.06em] font-bold text-[#6f6558] mb-2">Leçons du chapitre</div>
-                <div className="flex flex-col gap-2 max-h-[620px] overflow-auto pr-1">
-                  {visibleLessons.map((lesson, lessonIndex) => {
-                    const active = selectedLessonId === lesson.id
-                    const highlighted = !!highlightedDocumentId && lesson.id === highlightedDocumentId
-                    const parsed = parsedByLessonId.get(lesson.id)
-                    const sectionCount = parsed?.sections.length || 0
-                    const hasInlineLesson = !!lesson.sourceText.trim()
+              <div className="flex flex-wrap gap-2 mb-3">
+                {availableTopicKeys.map((topicKey) => {
+                  const rows = lessonsByTopic.get(topicKey as TopicBucketKey) || []
+                  const active = activeTopicKey === topicKey
 
-                    return (
-                      <button
-                        key={lesson.id}
-                        type="button"
-                        onClick={() => {
-                          setSelectedLessonId(lesson.id)
-                        }}
-                        className={cn(
-                          "text-left rounded-lg border px-3 py-2.5 transition-colors",
-                          active
-                            ? "border-[#556487] bg-[#e8edf8]"
-                            : highlighted
-                              ? "border-[#8f7ea8] bg-[#ece4f5]"
-                              : "border-[#d8cfbf] bg-[#fffaf0] hover:border-navy/35",
-                        )}
-                      >
-                        <div className="font-sans text-[11px] uppercase tracking-[0.06em] text-[#8a8175] mb-1">Leçon {lessonIndex + 1}</div>
-                        <div className="font-serif text-[15px] font-semibold text-[#2f3529] leading-snug">
-                          {lesson.name}
-                        </div>
-                        <div className="mt-1 flex flex-wrap items-center gap-1.5 font-sans text-[11px] text-[#7f786f]">
-                          <span>{lesson.date}</span>
-                          <span>{sectionCount} section(s)</span>
-                          <span
-                            className={cn(
-                              "inline-flex rounded-md px-1.5 py-0.5 text-[10px] font-semibold",
-                              hasInlineLesson ? "bg-abricot/20 text-abricot-dark" : "bg-watermelon/12 text-watermelon",
-                            )}
-                          >
-                            {hasInlineLesson ? "Interactif" : "À compléter"}
-                          </span>
-                        </div>
-                      </button>
-                    )
-                  })}
-
-                  {!visibleLessons.length && (
-                    <div className="font-sans text-xs text-[#7f786f]">
-                      Aucune leçon disponible pour ce thème.
-                    </div>
-                  )}
-                </div>
+                  return (
+                    <button
+                      key={`topic-${topicKey}`}
+                      type="button"
+                      onClick={() => {
+                        const typedTopic = topicKey as TopicBucketKey
+                        setActiveTopicKey(typedTopic)
+                        if (!rows.length) return
+                        setSelectedLessonId(rows[0].id)
+                        const nextSections = parsedByLessonId.get(rows[0].id)?.sections || []
+                        setSelectedSectionId(nextSections[0]?.id || null)
+                      }}
+                      className={cn(
+                        "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 font-sans text-[12px] font-semibold transition-colors",
+                        active
+                          ? "border-[#5d6f95] bg-[#dfe6f6] text-navy"
+                          : "border-[#ccbda3] bg-[#fff8ed] text-[#655d52] hover:border-navy/35 hover:text-navy",
+                      )}
+                    >
+                      <span>{topicLabel(topicKey as TopicBucketKey)}</span>
+                      <span className="rounded-full bg-white px-1.5 py-0.5 text-[10px] text-[#7b756c] border border-[#d8cfbf]">
+                        {rows.length}
+                      </span>
+                    </button>
+                  )
+                })}
               </div>
-            </aside>
 
-            <div className="relative overflow-hidden rounded-[22px] border border-[#d0c4ad] bg-[#efe5d1] shadow-[0_14px_28px_rgba(45,39,28,0.18)]">
-              <div className="pointer-events-none absolute inset-x-3 top-0 h-5 bg-[radial-gradient(circle_at_center,_rgba(72,56,36,0.16)_0%,_rgba(72,56,36,0)_78%)]" />
-              <div className="pointer-events-none absolute inset-y-4 left-1/2 hidden xl:block w-[20px] -translate-x-1/2 bg-[linear-gradient(90deg,_rgba(95,78,54,0.22)_0%,_rgba(95,78,54,0.03)_45%,_rgba(95,78,54,0.03)_55%,_rgba(95,78,54,0.22)_100%)]" />
-
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-0">
-                <section className="relative border-b xl:border-b-0 xl:border-r border-[#dacfbf] bg-[linear-gradient(135deg,_#fffaf1_0%,_#f8efde_100%)] p-4 md:p-5 flex flex-col gap-4">
-                  <div className="flex items-center justify-between gap-3 border-b border-[#d8ccb8] pb-3">
-                    <div>
-                      <div className="font-sans text-[11px] uppercase tracking-[0.08em] font-bold text-[#7b7265]">Page cours</div>
-                      <h4 className="font-serif text-[22px] leading-tight font-bold text-[#2f3529] mt-0.5">
-                        {selectedLessonParsed?.title || selectedLesson?.name || "Leçon"}
-                      </h4>
-                    </div>
-                    <span className="inline-flex rounded-md border border-[#cfbea3] bg-[#fff8eb] px-2.5 py-1 font-sans text-[11px] font-semibold text-[#726a5e]">
-                      p. 1
-                    </span>
-                  </div>
-
-                  {selectedLesson && !selectedLesson.sourceText.trim() && (
-                    <div className="rounded-lg border border-watermelon/30 bg-watermelon/10 px-3 py-2.5 font-sans text-[13px] text-text-dark">
-                      Le contenu texte de cette leçon n'est pas encore disponible. Demande à ton professeur d'ajouter le texte IA dans le document.
-                    </div>
-                  )}
-
-                  <div className="flex flex-col gap-3 max-h-[760px] overflow-auto pr-1">
-                    {selectedSections.map((section, index) => {
-                      const expanded = isSectionExpanded(section.id, index)
-                      const isActive = activeSection?.id === section.id
-                      const sectionRatio = sectionProgress(section.id)
-                      const lead = sectionLead(section)
-                      const displaySectionTitle = normalizeLessonLine(section.title) || "Section"
+              <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_1fr] gap-3">
+                <div className="rounded-lg border border-[#d8cfbf] bg-[#fffaf0] p-3">
+                  <div className="font-sans text-[12px] uppercase tracking-[0.06em] font-bold text-[#6f6558] mb-2">Leçons disponibles</div>
+                  <div className="flex flex-col gap-2 max-h-[240px] overflow-auto pr-1">
+                    {visibleLessons.map((lesson, lessonIndex) => {
+                      const active = selectedLessonId === lesson.id
+                      const highlighted = !!highlightedDocumentId && lesson.id === highlightedDocumentId
+                      const parsed = parsedByLessonId.get(lesson.id)
+                      const sectionCount = parsed?.sections.length || 0
 
                       return (
-                        <article
-                          key={section.id}
+                        <button
+                          key={lesson.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedLessonId(lesson.id)
+                            setSelectedSectionId((parsed?.sections || [])[0]?.id || null)
+                          }}
                           className={cn(
-                            "rounded-xl border",
-                            isActive
-                              ? "border-[#7f8db0] bg-[#edf2fb]"
-                              : "border-[#d8cfbf] bg-[#fffaf0]",
+                            "text-left rounded-lg border px-3 py-2 transition-colors",
+                            active
+                              ? "border-[#556487] bg-[#e8edf8]"
+                              : highlighted
+                                ? "border-[#8f7ea8] bg-[#ece4f5]"
+                                : "border-[#d8cfbf] bg-[#fffaf0] hover:border-navy/35",
                           )}
                         >
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSelectedSectionId(section.id)
-                              toggleSection(section.id, index)
-                            }}
-                            className="w-full px-3.5 py-3 flex items-start justify-between gap-3 text-left"
-                          >
-                            <div>
-                              <div className="font-sans text-[11px] uppercase tracking-[0.06em] text-[#7f776b]">
-                                Section {index + 1}
-                              </div>
-                              <div className="font-serif text-[18px] font-bold text-[#313528] leading-snug mt-0.5">{displaySectionTitle}</div>
-                              {!!lead && <div className="font-sans text-[12px] text-[#676157] mt-1">{lead}</div>}
-                            </div>
-
-                            <div className="shrink-0 flex items-center gap-2">
-                              <span className="inline-flex rounded-md border border-[#cfbea3] bg-[#fff8eb] px-2 py-0.5 font-sans text-[10px] font-semibold text-[#6f675b]">
-                                {sectionRatio}% compris
-                              </span>
-                              <Icons.ChevronRight className={cn("w-4 h-4 text-[#8b8172] transition-transform", expanded ? "rotate-90" : "")} />
-                            </div>
-                          </button>
-
-                          {expanded && (
-                            <div className="px-3.5 pb-3.5 border-t border-[#ddcfbd] flex flex-col gap-3 pt-3">
-                              {section.blocks.map((block, blockIndex) => renderLessonBlock(block, `${section.id}-${blockIndex}`))}
-
-                              <div className="pt-1">
-                                <button
-                                  type="button"
-                                  onClick={() => setSelectedSectionId(section.id)}
-                                  className={cn(
-                                    "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 font-sans text-[12px] font-semibold transition-colors",
-                                    isActive
-                                      ? "border-[#7a8cb3] bg-[#dde6f8] text-navy"
-                                      : "border-[#cfbea3] bg-[#fff8eb] text-[#665e53] hover:border-navy/35 hover:text-navy",
-                                  )}
-                                >
-                                  <Icons.Target className="w-3.5 h-3.5" />
-                                  Travailler cette section
-                                </button>
-                              </div>
-                            </div>
-                          )}
-                        </article>
+                          <div className="font-sans text-[11px] uppercase tracking-[0.06em] text-[#8a8175]">Leçon {lessonIndex + 1}</div>
+                          <div className="font-serif text-[15px] font-semibold text-[#2f3529] leading-snug mt-0.5">{lesson.name}</div>
+                          <div className="font-sans text-[11px] text-[#7f786f] mt-1">{sectionCount} section(s)</div>
+                        </button>
                       )
                     })}
 
-                    {!selectedSections.length && (
-                      <div className="rounded-lg border border-[#d8cfbf] bg-[#fffaf0] px-3.5 py-3 font-sans text-sm text-[#665e53]">
-                        Sélectionne une leçon pour afficher sa version interactive.
+                    {!visibleLessons.length && (
+                      <div className="font-sans text-xs text-[#7f786f]">
+                        Aucune leçon ne correspond à la recherche pour ce thème.
                       </div>
                     )}
                   </div>
+                </div>
 
-                  {!!selectedSections.length && (
-                    <div className="mt-auto border-t border-[#d8ccb8] pt-3 flex items-center justify-between gap-3">
-                      <button
-                        type="button"
-                        onClick={() => goToSectionAt(activeSectionIndex - 1)}
-                        disabled={activeSectionIndex <= 0}
-                        className="inline-flex items-center gap-1.5 rounded-md border border-[#cfbea3] bg-[#fff8eb] px-2.5 py-1.5 font-sans text-[12px] font-semibold text-[#625a50] disabled:opacity-45 disabled:cursor-not-allowed"
-                      >
-                        <Icons.ChevronLeft className="h-3.5 w-3.5" />
-                        Section précédente
-                      </button>
+                <div className="rounded-lg border border-[#d8cfbf] bg-[#fffaf0] p-3">
+                  <div className="font-sans text-[12px] uppercase tracking-[0.06em] font-bold text-[#6f6558] mb-2">Sections à ouvrir</div>
+                  <div className="flex flex-wrap gap-2">
+                    {quickSummarySections.map((section, index) => {
+                      const isActive = activeSection?.id === section.id
+                      return (
+                        <button
+                          key={`summary-section-${section.id}`}
+                          type="button"
+                          onClick={() => setSelectedSectionId(section.id)}
+                          className={cn(
+                            "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 font-sans text-[12px] font-semibold transition-colors",
+                            isActive
+                              ? "border-[#6f83ad] bg-[#e5ecfb] text-navy"
+                              : "border-[#cfbea3] bg-white text-[#655d52] hover:border-navy/35 hover:text-navy",
+                          )}
+                        >
+                          <span className="inline-flex w-5 h-5 items-center justify-center rounded-full bg-white border border-[#d5c7b0] text-[10px]">
+                            {index + 1}
+                          </span>
+                          {normalizeLessonLine(section.title) || "Section"}
+                        </button>
+                      )
+                    })}
 
-                      <button
-                        type="button"
-                        onClick={() => goToSectionAt(activeSectionIndex + 1)}
-                        disabled={activeSectionIndex < 0 || activeSectionIndex >= selectedSections.length - 1}
-                        className="inline-flex items-center gap-1.5 rounded-md border border-[#7a8cb3] bg-[#dde6f8] px-2.5 py-1.5 font-sans text-[12px] font-semibold text-navy disabled:opacity-45 disabled:cursor-not-allowed"
-                      >
-                        Section suivante
-                        <Icons.ChevronRight className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  )}
-                </section>
-
-                <section className="relative bg-[linear-gradient(215deg,_#fff9ee_0%,_#f7ecd8_100%)] p-4 md:p-5 flex flex-col gap-4">
-                  <div className="flex items-center justify-between gap-3 border-b border-[#d8ccb8] pb-3">
-                    <div>
-                      <div className="font-sans text-[11px] uppercase tracking-[0.08em] font-bold text-[#7b7265]">Page compréhension</div>
-                      <h4 className="font-serif text-[22px] leading-tight font-bold text-[#2f3529] mt-0.5">Comprendre et appliquer</h4>
-                    </div>
-
-                    <span className="inline-flex rounded-md border border-[#cfbea3] bg-[#fff8eb] px-2.5 py-1 font-sans text-[11px] font-semibold text-[#726a5e]">
-                      p. 2
-                    </span>
-                  </div>
-
-                  {!activeSection && (
-                    <div className="rounded-lg border border-[#d8cfbf] bg-[#fffaf0] px-3.5 py-3 font-sans text-sm text-[#665e53]">
-                      Ouvre une section sur la page cours pour activer les exemples et l'auto-vérification.
-                    </div>
-                  )}
-
-                  {activeSection && (
-                    <>
-                      <div className="rounded-xl border border-[#d6bc8e] bg-[#fff2db] p-3.5">
-                        <div className="font-sans text-[11px] uppercase tracking-[0.06em] font-bold text-[#8a6f41] mb-1">Section active</div>
-                        <div className="font-serif text-[19px] font-bold text-[#3a352d]">{normalizeLessonLine(activeSection.title) || "Section"}</div>
+                    {!quickSummarySections.length && (
+                      <div className="font-sans text-xs text-[#7f786f]">
+                        Aucune section ne correspond à la recherche actuelle.
                       </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
 
-                      {!!activeMethodology && (
-                        <div className="rounded-xl border border-[#aab8d9] bg-[#edf3ff] p-3.5">
-                          <div className="font-sans text-[12px] font-semibold text-navy mb-1">Méthodologie de construction</div>
-                          <div className="font-sans text-[12px] text-[#5e5960] mb-2">{activeMethodology.goal}</div>
+            <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.62fr)_minmax(0,1fr)] gap-4">
+              <section className="rounded-[22px] border border-[#d0c4ad] bg-[linear-gradient(135deg,_#fffaf1_0%,_#f8efde_100%)] p-4 md:p-5 flex flex-col gap-4 shadow-[0_14px_28px_rgba(45,39,28,0.18)]">
+                <div className="flex items-center justify-between gap-3 border-b border-[#d8ccb8] pb-3">
+                  <div>
+                    <div className="font-sans text-[11px] uppercase tracking-[0.08em] font-bold text-[#7b7265]">Page cours complète</div>
+                    <h4 className="font-serif text-[24px] leading-tight font-bold text-[#2f3529] mt-0.5">
+                      {selectedLessonParsed?.title || selectedLesson?.name || "Leçon"}
+                    </h4>
+                  </div>
+                  <span className="inline-flex rounded-md border border-[#cfbea3] bg-[#fff8eb] px-2.5 py-1 font-sans text-[11px] font-semibold text-[#726a5e]">
+                    {selectedSections.length} section(s)
+                  </span>
+                </div>
 
-                          <div className="rounded-lg border border-[#cad6ee] bg-white/70 px-2.5 py-2 mb-2.5">
-                            <div className="font-sans text-[10px] uppercase tracking-[0.05em] font-bold text-[#697596] mb-1">Structure</div>
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              {activeMethodology.structure.map((part, index) => (
-                                <span key={`method-structure-${index}`} className="inline-flex items-center gap-1.5">
-                                  <span className="inline-flex rounded-md border border-[#b7c5e4] bg-white px-2 py-0.5 font-sans text-[11px] font-semibold text-[#36425e]">
-                                    {part}
-                                  </span>
-                                  {index < activeMethodology.structure.length - 1 && (
-                                    <span className="font-sans text-[11px] font-semibold text-[#7f7c76]">+</span>
-                                  )}
-                                </span>
-                              ))}
-                            </div>
+                {selectedLesson && !selectedLesson.sourceText.trim() && (
+                  <div className="rounded-lg border border-watermelon/30 bg-watermelon/10 px-3 py-2.5 font-sans text-[13px] text-text-dark">
+                    Le contenu texte de cette leçon n'est pas encore disponible. Demande à ton professeur d'ajouter le texte IA dans le document.
+                  </div>
+                )}
+
+                {!!selectedSections.length && (
+                  <div className="rounded-xl border border-[#d8cfbf] bg-[#fffdf6] p-3">
+                    <div className="font-sans text-[11px] uppercase tracking-[0.06em] font-bold text-[#7f776b] mb-2">Repères de section</div>
+                    <div className="flex flex-wrap gap-2">
+                      {selectedSections.map((section, index) => {
+                        const isActive = activeSection?.id === section.id
+                        return (
+                          <button
+                            key={`section-nav-${section.id}`}
+                            type="button"
+                            onClick={() => setSelectedSectionId(section.id)}
+                            className={cn(
+                              "inline-flex items-center gap-1.5 rounded-md border px-2 py-1 font-sans text-[12px] font-semibold transition-colors",
+                              isActive
+                                ? "border-[#6f83ad] bg-[#e5ecfb] text-navy"
+                                : "border-[#cfbea3] bg-white text-[#665e53] hover:border-navy/35 hover:text-navy",
+                            )}
+                          >
+                            <span className="inline-flex w-5 h-5 items-center justify-center rounded-full border border-[#d5c7b0] bg-white text-[10px]">
+                              {index + 1}
+                            </span>
+                            {normalizeLessonLine(section.title) || "Section"}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex flex-col gap-3 max-h-[860px] overflow-auto pr-1">
+                  {selectedSections.map((section, index) => {
+                    const isActive = activeSection?.id === section.id
+                    const lead = sectionLead(section)
+                    const displaySectionTitle = normalizeLessonLine(section.title) || "Section"
+
+                    return (
+                      <article
+                        key={section.id}
+                        className={cn(
+                          "rounded-xl border",
+                          isActive
+                            ? "border-[#7f8db0] bg-[#edf2fb]"
+                            : "border-[#d8cfbf] bg-[#fffaf0]",
+                        )}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => setSelectedSectionId(section.id)}
+                          className="w-full px-3.5 py-3 text-left"
+                        >
+                          <div className="inline-flex items-center gap-2 rounded-full border border-[#d6c6ad] bg-[#fff4e2] px-2.5 py-0.5 font-sans text-[10px] font-bold uppercase tracking-[0.07em] text-[#7b7265]">
+                            Section {index + 1}
                           </div>
+                          <h5 className="font-serif text-[21px] font-bold text-[#313528] leading-snug mt-1">{displaySectionTitle}</h5>
+                          {!!lead && <div className="font-sans text-[12px] text-[#676157] mt-1">{lead}</div>}
+                        </button>
 
-                          <ul className="list-disc pl-5 space-y-1 font-sans text-[12px] text-text-dark leading-relaxed">
-                            {activeMethodology.steps.map((step, index) => (
-                              <li key={`method-step-${index}`}>{step}</li>
+                        <div className="px-3.5 pb-3.5 border-t border-[#ddcfbd] flex flex-col gap-3 pt-3">
+                          {section.blocks.map((block, blockIndex) => renderLessonBlock(block, `${section.id}-${blockIndex}`))}
+
+                          {!!section.examples.length && (
+                            <div className="rounded-lg border border-abricot/35 bg-abricot/12 px-3 py-2.5">
+                              <div className="font-sans text-[11px] uppercase tracking-[0.04em] font-bold text-[#8a6f41] mb-1">Exemples rapides</div>
+                              <ul className="list-disc pl-5 space-y-1.5 font-sans text-[13px] text-text-dark italic">
+                                {section.examples.slice(0, 3).map((example, exampleIndex) => (
+                                  <li key={`${section.id}-example-${exampleIndex}`}>{renderPlainFrenchText(example, `${section.id}-example-${exampleIndex}`)}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      </article>
+                    )
+                  })}
+
+                  {!selectedSections.length && (
+                    <div className="rounded-lg border border-[#d8cfbf] bg-[#fffaf0] px-3.5 py-3 font-sans text-sm text-[#665e53]">
+                      Sélectionne une leçon pour afficher la version complète.
+                    </div>
+                  )}
+                </div>
+
+                {!!selectedSections.length && (
+                  <div className="mt-auto border-t border-[#d8ccb8] pt-3 flex items-center justify-between gap-3">
+                    <button
+                      type="button"
+                      onClick={() => goToSectionAt(activeSectionIndex - 1)}
+                      disabled={activeSectionIndex <= 0}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-[#cfbea3] bg-[#fff8eb] px-2.5 py-1.5 font-sans text-[12px] font-semibold text-[#625a50] disabled:opacity-45 disabled:cursor-not-allowed"
+                    >
+                      <Icons.ChevronLeft className="h-3.5 w-3.5" />
+                      Section précédente
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => goToSectionAt(activeSectionIndex + 1)}
+                      disabled={activeSectionIndex < 0 || activeSectionIndex >= selectedSections.length - 1}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-[#7a8cb3] bg-[#dde6f8] px-2.5 py-1.5 font-sans text-[12px] font-semibold text-navy disabled:opacity-45 disabled:cursor-not-allowed"
+                    >
+                      Section suivante
+                      <Icons.ChevronRight className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                )}
+              </section>
+
+              <section className="rounded-[22px] border border-[#d0c4ad] bg-[linear-gradient(215deg,_#fff9ee_0%,_#f7ecd8_100%)] p-4 md:p-5 flex flex-col gap-4 shadow-[0_12px_24px_rgba(45,39,28,0.12)]">
+                <div className="flex items-center justify-between gap-3 border-b border-[#d8ccb8] pb-3">
+                  <div>
+                    <div className="font-sans text-[11px] uppercase tracking-[0.08em] font-bold text-[#7b7265]">Page compréhension</div>
+                    <h4 className="font-serif text-[22px] leading-tight font-bold text-[#2f3529] mt-0.5">Fiche cible et mini-exercices</h4>
+                  </div>
+                  <span className="inline-flex rounded-md border border-[#cfbea3] bg-[#fff8eb] px-2.5 py-1 font-sans text-[11px] font-semibold text-[#726a5e]">
+                    Auto-corrigé
+                  </span>
+                </div>
+
+                {!activeSection && (
+                  <div className="rounded-lg border border-[#d8cfbf] bg-[#fffaf0] px-3.5 py-3 font-sans text-sm text-[#665e53]">
+                    Choisis une section sur la page cours pour afficher la fiche "À retenir" et les exercices auto-corrigés.
+                  </div>
+                )}
+
+                {activeSection && (
+                  <>
+                    <div className="rounded-xl border border-[#aab8d9] bg-[#edf3ff] p-3.5">
+                      <div className="font-sans text-[11px] uppercase tracking-[0.06em] font-bold text-[#5f6d8d] mb-1">Fiche cible - points majeurs</div>
+                      <div className="font-serif text-[19px] font-bold text-[#33405a] mb-2">{normalizeLessonLine(activeSection.title) || "Section"}</div>
+
+                      {!!activeMethodology?.structure.length && (
+                        <div className="rounded-lg border border-[#cad6ee] bg-white/70 px-2.5 py-2 mb-2.5">
+                          <div className="font-sans text-[10px] uppercase tracking-[0.05em] font-bold text-[#697596] mb-1">Structure à garder</div>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {activeMethodology.structure.map((part, index) => (
+                              <span key={`method-structure-${index}`} className="inline-flex items-center gap-1.5">
+                                <span className="inline-flex rounded-md border border-[#b7c5e4] bg-white px-2 py-0.5 font-sans text-[11px] font-semibold text-[#36425e]">
+                                  {part}
+                                </span>
+                                {index < activeMethodology.structure.length - 1 && (
+                                  <span className="font-sans text-[11px] font-semibold text-[#7f7c76]">+</span>
+                                )}
+                              </span>
                             ))}
-                          </ul>
+                          </div>
                         </div>
                       )}
 
-                      <div className="rounded-xl border border-abricot/35 bg-abricot/12 p-3.5">
-                        <div className="font-sans text-[12px] font-semibold text-navy mb-2">Exemples à garder en tête</div>
-                        {activeExamples.length ? (
-                          <ul className="list-disc pl-5 space-y-1.5 font-sans text-[13px] text-text-dark leading-relaxed italic">
-                            {activeExamples.map((example, index) => (
-                              <li key={`example-${index}`}>{renderPlainFrenchText(example, `example-${index}`)}</li>
-                            ))}
-                          </ul>
-                        ) : (
-                          <div className="font-sans text-[13px] text-text-mid">
-                            Aucun exemple explicite dans cette section. Crée un exemple personnel ci-dessous.
+                      <ul className="list-disc pl-5 space-y-1.5 font-sans text-[13px] text-text-dark leading-relaxed">
+                        {activeKeyPoints.map((point, index) => (
+                          <li key={`key-point-${index}`}>{point}</li>
+                        ))}
+                      </ul>
+
+                      {!!activeExamples.length && (
+                        <div className="mt-2.5 rounded-lg border border-abricot/35 bg-abricot/12 px-2.5 py-2">
+                          <div className="font-sans text-[11px] font-semibold text-[#8a6f41] mb-1">Exemple modèle</div>
+                          <div className="font-sans text-[12px] italic text-[#3d3a34]">
+                            {renderPlainFrenchText(activeExamples[0], "active-example-focus")}
                           </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="rounded-xl border border-[#97a6c7] bg-[#ebf1ff] p-3.5">
+                      <div className="flex items-center justify-between gap-2 mb-2.5">
+                        <div>
+                          <div className="font-sans text-[12px] font-semibold text-navy">Exercices de vérification</div>
+                          <div className="font-sans text-[11px] text-[#66615a]">Réponds puis lance la correction automatique.</div>
+                        </div>
+                        <span className="font-sans text-[11px] font-semibold text-[#5d5a54]">
+                          {answeredExerciseCount}/{autoExercises.length} répondu(s)
+                        </span>
+                      </div>
+
+                      <div className="flex flex-col gap-3">
+                        {autoExercises.map((exercise, exerciseIndex) => {
+                          const selectedAnswer = activeQuizAnswers[exercise.id]
+
+                          return (
+                            <div key={`exercise-${exercise.id}`} className="rounded-lg border border-[#bdc8df] bg-white/80 px-3 py-2.5">
+                              <div className="font-sans text-[12px] font-semibold text-[#33405a] mb-2">
+                                {exerciseIndex + 1}. {exercise.prompt}
+                              </div>
+
+                              <div className="flex flex-col gap-1.5">
+                                {exercise.choices.map((choice, choiceIndex) => {
+                                  const isSelected = selectedAnswer === choiceIndex
+                                  const isCorrectChoice = choiceIndex === exercise.correctIndex
+
+                                  return (
+                                    <button
+                                      key={`exercise-${exercise.id}-choice-${choiceIndex}`}
+                                      type="button"
+                                      onClick={() => setExerciseAnswer(exercise.id, choiceIndex)}
+                                      className={cn(
+                                        "rounded-md border px-2.5 py-1.5 text-left font-sans text-[12px] transition-colors",
+                                        !activeQuizChecked && isSelected && "border-[#6f83ad] bg-[#e8eefb] text-navy",
+                                        !activeQuizChecked && !isSelected && "border-[#cfdae8] bg-white hover:border-[#98aacb]",
+                                        activeQuizChecked && isCorrectChoice && "border-[#5c7c4c] bg-[#e7f4dc] text-[#2f4a24]",
+                                        activeQuizChecked && isSelected && !isCorrectChoice && "border-watermelon/45 bg-watermelon/10 text-watermelon-dark",
+                                        activeQuizChecked && !isSelected && !isCorrectChoice && "border-[#cfdae8] bg-white/70 text-[#5d5952]",
+                                      )}
+                                    >
+                                      <span className="inline-flex items-center gap-2">
+                                        {activeQuizChecked && isCorrectChoice && <Icons.Check className="w-3.5 h-3.5" />}
+                                        {choice}
+                                      </span>
+                                    </button>
+                                  )
+                                })}
+                              </div>
+
+                              {activeQuizChecked && (
+                                <div className="mt-2 rounded-md border border-[#cad6ee] bg-[#f7f9ff] px-2.5 py-1.5 font-sans text-[11px] text-[#535e77]">
+                                  {exercise.explanation}
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={validateActiveExercises}
+                          disabled={!allExercisesAnswered}
+                          className="inline-flex items-center gap-1.5 rounded-md border border-[#7a8cb3] bg-[#dde6f8] px-3 py-1.5 font-sans text-[12px] font-semibold text-navy disabled:opacity-45 disabled:cursor-not-allowed"
+                        >
+                          Corriger mes réponses
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={resetActiveExercises}
+                          className="inline-flex items-center gap-1.5 rounded-md border border-[#cfbea3] bg-[#fff8eb] px-3 py-1.5 font-sans text-[12px] font-semibold text-[#625a50]"
+                        >
+                          Recommencer
+                        </button>
+
+                        {activeQuizChecked && (
+                          <span className="font-sans text-[12px] font-semibold text-[#5d5a54]">
+                            Score: {exerciseScore}/{autoExercises.length}
+                          </span>
                         )}
                       </div>
+                    </div>
 
-                      <div className="rounded-xl border border-[#97a6c7] bg-[#ebf1ff] p-3.5">
-                        <div className="flex items-center justify-between gap-2 mb-2.5">
-                          <div className="font-sans text-[12px] font-semibold text-navy">Auto-vérification</div>
-                          <span className="font-sans text-[11px] font-semibold text-[#5d5a54]">
-                            {completionRatio(activeSelfCheckState)}% terminé
-                          </span>
-                        </div>
-
-                        <div className="h-2 rounded-full bg-white border border-[#cfd7e8] overflow-hidden mb-3">
-                          <div
-                            className="h-full bg-navy-light transition-all duration-300"
-                            style={{ width: `${completionRatio(activeSelfCheckState)}%` }}
-                          />
-                        </div>
-
-                        <div className="flex flex-col gap-2">
-                          {[
-                            {
-                              key: "reformulateRule" as const,
-                              label: "Je peux reformuler la règle avec mes mots.",
-                            },
-                            {
-                              key: "ownExample" as const,
-                              label: "Je peux produire un exemple sans regarder.",
-                            },
-                            {
-                              key: "usageContext" as const,
-                              label: "Je sais dans quel contexte l'utiliser.",
-                            },
-                          ].map((item) => {
-                            const checked = activeSelfCheckState[item.key]
-                            return (
-                              <button
-                                key={item.key}
-                                type="button"
-                                onClick={() => toggleChecklistItem(item.key)}
-                                className={cn(
-                                  "rounded-lg border px-3 py-2 text-left font-sans text-[13px] transition-colors",
-                                  checked
-                                    ? "border-[#6f83ad] bg-white text-text-dark"
-                                    : "border-[#becadd] bg-[#f8fbff] text-[#5f5d59] hover:border-[#90a2c7]",
-                                )}
-                              >
-                                <span className="inline-flex items-center gap-2">
-                                  <span
-                                    className={cn(
-                                      "w-4 h-4 rounded-full border flex items-center justify-center",
-                                      checked ? "border-[#6f83ad] bg-[#6f83ad] text-white" : "border-[#bdc7db] bg-white",
-                                    )}
-                                  >
-                                    {checked && <Icons.Check className="w-3 h-3" />}
-                                  </span>
-                                  {item.label}
-                                </span>
-                              </button>
-                            )
-                          })}
-                        </div>
+                    <div className="rounded-xl border border-navy/30 bg-navy/8 p-3.5 flex flex-wrap items-center justify-between gap-2.5">
+                      <div className="font-sans text-[13px] text-text-dark">
+                        Quand la fiche est maîtrisée, passe aux exercices basés sur le cours.
                       </div>
-
-                      <div className="rounded-xl border border-[#d8cfbf] bg-[#fffaf0] p-3.5 flex flex-col gap-3">
-                        <div>
-                          <div className="font-sans text-[12px] font-semibold text-navy mb-1">Mon exemple perso</div>
-                          <textarea
-                            value={activeSelfCheckState.personalExampleText}
-                            onChange={(event) => updateSelfCheck({ personalExampleText: event.target.value })}
-                            placeholder="Écris une phrase personnelle qui applique cette section."
-                            className="w-full min-h-[90px] rounded-[10px] border-2 border-[#d5c8b2] bg-white px-3 py-2.5 font-sans text-sm text-text-dark placeholder:text-text-light outline-none focus:border-navy"
-                          />
-                        </div>
-
-                        <div>
-                          <div className="font-sans text-[12px] font-semibold text-navy mb-1">Point à retenir</div>
-                          <textarea
-                            value={activeSelfCheckState.takeawayText}
-                            onChange={(event) => updateSelfCheck({ takeawayText: event.target.value })}
-                            placeholder="Note la règle la plus importante de cette section."
-                            className="w-full min-h-[74px] rounded-[10px] border-2 border-[#d5c8b2] bg-white px-3 py-2.5 font-sans text-sm text-text-dark placeholder:text-text-light outline-none focus:border-navy"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="rounded-xl border border-navy/30 bg-navy/8 p-3.5 flex flex-wrap items-center justify-between gap-2.5">
-                        <div className="font-sans text-[13px] text-text-dark">
-                          Quand c'est clair, enchaîne avec des exercices basés sur le cours.
-                        </div>
-                        <Link
-                          href="/student/course-exercises"
-                          className="inline-flex items-center gap-1.5 rounded-md bg-navy px-3 py-1.5 font-sans text-[12px] font-semibold text-white hover:bg-navy-mid transition-colors"
-                        >
-                          Pratiquer maintenant
-                          <Icons.ArrowRight className="w-3.5 h-3.5" />
-                        </Link>
-                      </div>
-                    </>
-                  )}
-                </section>
-              </div>
+                      <Link
+                        href="/student/course-exercises"
+                        className="inline-flex items-center gap-1.5 rounded-md bg-navy px-3 py-1.5 font-sans text-[12px] font-semibold text-white hover:bg-navy-mid transition-colors"
+                      >
+                        Pratiquer maintenant
+                        <Icons.ArrowRight className="w-3.5 h-3.5" />
+                      </Link>
+                    </div>
+                  </>
+                )}
+              </section>
             </div>
           </div>
         )}

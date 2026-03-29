@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
-import { adminAuth, adminDb } from "@/lib/firebase/admin"
+import { adminDb } from "@/lib/firebase/admin"
 import { FieldValue } from "firebase-admin/firestore"
+import { verifyRequestBearerToken } from "@/lib/firebase/request-auth"
 
 type UpdateStudentLevelPayload = {
   classId?: string
@@ -12,17 +13,6 @@ const allowedLevels = new Set(["a1", "a2", "b1", "b2", "c1", "c2"])
 
 function badRequest(message: string) {
   return NextResponse.json({ error: message }, { status: 400 })
-}
-
-async function getCallerUid(request: Request): Promise<string | null> {
-  const authorization = request.headers.get("authorization")
-  if (!authorization?.startsWith("Bearer ")) return null
-  try {
-    const decoded = await adminAuth.verifyIdToken(authorization.slice(7))
-    return decoded.uid
-  } catch {
-    return null
-  }
 }
 
 export async function POST(request: Request) {
@@ -46,10 +36,11 @@ export async function POST(request: Request) {
     return badRequest("Niveau CECRL invalide.")
   }
 
-  const callerUid = await getCallerUid(request)
-  if (!callerUid) {
-    return NextResponse.json({ error: "Non autorisé." }, { status: 401 })
+  const authResult = await verifyRequestBearerToken(request)
+  if (!authResult.ok) {
+    return NextResponse.json({ error: authResult.error }, { status: authResult.status })
   }
+  const callerUid = authResult.uid
 
   const classSnap = await adminDb.collection("classes").doc(classId).get()
   const classRow = classSnap.exists ? { id: classSnap.id, ...classSnap.data() } as any : null

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { adminAuth, adminDb } from "@/lib/firebase/admin"
 import { FieldValue } from "firebase-admin/firestore"
+import { verifyRequestBearerToken } from "@/lib/firebase/request-auth"
 
 type EnrollStudentPayload = {
   fullName?: string
@@ -18,17 +19,6 @@ function normalizeLevel(level: string | null | undefined) {
 
 function badRequest(message: string) {
   return NextResponse.json({ error: message }, { status: 400 })
-}
-
-async function getCallerUid(request: Request): Promise<string | null> {
-  const authorization = request.headers.get("authorization")
-  if (!authorization?.startsWith("Bearer ")) return null
-  try {
-    const decoded = await adminAuth.verifyIdToken(authorization.slice(7))
-    return decoded.uid
-  } catch {
-    return null
-  }
 }
 
 export async function POST(request: Request) {
@@ -57,10 +47,11 @@ export async function POST(request: Request) {
     return badRequest("Le mot de passe doit contenir au moins 8 caractères.")
   }
 
-  const callerUid = await getCallerUid(request)
-  if (!callerUid) {
-    return NextResponse.json({ error: "Non autorisé." }, { status: 401 })
+  const authResult = await verifyRequestBearerToken(request)
+  if (!authResult.ok) {
+    return NextResponse.json({ error: authResult.error }, { status: authResult.status })
   }
+  const callerUid = authResult.uid
 
   const classSnap = await adminDb.collection("classes").doc(classId).get()
   const classRow = classSnap.exists ? { id: classSnap.id, ...classSnap.data() } as any : null

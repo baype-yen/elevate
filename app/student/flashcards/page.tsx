@@ -123,14 +123,45 @@ function normalizeProgress(raw: any): AdaptiveProgress {
   }
 }
 
-async function authHeaders() {
-  const idToken = await auth.currentUser?.getIdToken()
+async function authHeadersWithRefresh(forceRefresh = false) {
+  const idToken = await auth.currentUser?.getIdToken(forceRefresh)
   if (!idToken) throw new Error("Session invalide. Reconnectez-vous.")
 
   return {
     "Content-Type": "application/json",
     Authorization: `Bearer ${idToken}`,
   }
+}
+
+async function parseJsonSafe<T>(response: Response): Promise<T | null> {
+  try {
+    return (await response.json()) as T
+  } catch {
+    return null
+  }
+}
+
+async function fetchWithStudentAuth(input: string, init?: RequestInit) {
+  const run = async (forceRefresh: boolean) => {
+    const headers = new Headers(init?.headers || {})
+    const authHeaderValues = await authHeadersWithRefresh(forceRefresh)
+
+    for (const [key, value] of Object.entries(authHeaderValues)) {
+      headers.set(key, value)
+    }
+
+    return fetch(input, {
+      ...init,
+      headers,
+    })
+  }
+
+  let response = await run(false)
+  if (response.status === 401) {
+    response = await run(true)
+  }
+
+  return response
 }
 
 export default function FlashcardsPage() {
@@ -161,14 +192,22 @@ export default function FlashcardsPage() {
       setLoadingDeck(true)
       setError(null)
 
-      const response = await fetch("/api/student/flashcards/session", {
+      const response = await fetchWithStudentAuth("/api/student/flashcards/session", {
         method: "POST",
-        headers: await authHeaders(),
       })
 
-      const payload = await response.json()
+      const payload = await parseJsonSafe<SessionResponse & { error?: string }>(response)
       if (!response.ok) {
-        throw new Error(payload?.error || "Impossible de charger le deck adaptatif.")
+        throw new Error(
+          payload?.error
+          || (response.status === 401
+            ? "Session expirée. Reconnectez-vous puis réessayez."
+            : "Impossible de charger le deck adaptatif."),
+        )
+      }
+
+      if (!payload) {
+        throw new Error("Réponse invalide du serveur.")
       }
 
       const data = payload as SessionResponse
@@ -203,18 +242,26 @@ export default function FlashcardsPage() {
       setBusy(true)
       setError(null)
 
-      const response = await fetch("/api/student/flashcards/answer", {
+      const response = await fetchWithStudentAuth("/api/student/flashcards/answer", {
         method: "POST",
-        headers: await authHeaders(),
         body: JSON.stringify({
           card_id: currentCard.id,
           selected_option: selectedOption,
         }),
       })
 
-      const payload = await response.json()
+      const payload = await parseJsonSafe<AnswerResponse & { error?: string }>(response)
       if (!response.ok) {
-        throw new Error(payload?.error || "Impossible de corriger la réponse.")
+        throw new Error(
+          payload?.error
+          || (response.status === 401
+            ? "Session expirée. Reconnectez-vous puis réessayez."
+            : "Impossible de corriger la réponse."),
+        )
+      }
+
+      if (!payload) {
+        throw new Error("Réponse invalide du serveur.")
       }
 
       const data = payload as AnswerResponse
@@ -269,13 +316,21 @@ export default function FlashcardsPage() {
 
       {loadingDeck ? (
         <div className="font-sans text-sm text-text-mid">Generation du deck adaptatif...</div>
-      ) : !currentCard ? (
+      ) : !currentCard && !error ? (
         <div className="bg-card rounded-[20px] border border-gray-mid p-7 text-center">
           <Icons.Layers className="mx-auto mb-3 text-text-light" />
           <div className="font-sans text-sm text-text-mid mb-3">
             Le deck est vide pour le moment. Clique sur "Régénérer le deck" pour créer de nouvelles questions.
           </div>
           <ElevateButton variant="primary" onClick={loadSession} disabled={busy}>Créer mon deck</ElevateButton>
+        </div>
+      ) : !currentCard ? (
+        <div className="bg-card rounded-[20px] border border-gray-mid p-7 text-center">
+          <Icons.Bell className="mx-auto mb-3 text-watermelon" />
+          <div className="font-sans text-sm text-text-mid mb-3">
+            Impossible de charger les flashcards pour le moment.
+          </div>
+          <ElevateButton variant="outline" onClick={loadSession} disabled={busy || loadingDeck}>Réessayer</ElevateButton>
         </div>
       ) : (
         <div className="bg-card rounded-[20px] border border-gray-mid p-6 flex flex-col gap-4">
